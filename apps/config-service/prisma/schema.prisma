@@ -1,0 +1,49 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Configuration {
+  id         String   @id @default(uuid())
+  tenantCode String   @unique
+  payload    Json
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model ModuleEntitlement {
+  id        String   @id @default(uuid())
+  tenantId  String
+  moduleKey String
+  enabled   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, moduleKey])
+  @@index([tenantId])
+}
+
+model ConfigMaster {
+  id         String   @id @default(uuid())
+  tenantId   String
+  configType String
+  configKey  String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, configType, configKey])
+  @@index([tenantId])
+}
+
+model ProcessedEvent {
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  eventType   String
+  processedAt DateTime @default(now())
+}

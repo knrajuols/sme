@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Parent {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String
+  firstName  String
+  lastName   String
+  phone      String?
+  email      String?
+  relation   String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model ParentStudentMapping {
+  id         String   @id @default(uuid())
+  tenantId   String
+  parentId   String
+  studentId  String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([tenantId, parentId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+model Student {
+  id              String   @id @default(uuid())
+  tenantId        String
+  admissionNumber String
+  firstName       String
+  lastName        String
+  status          String
+  softDelete      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model AttendanceSession {
+  id         String   @id @default(uuid())
+  tenantId   String
+  date       DateTime @db.Date
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model AttendanceRecord {
+  id         String   @id @default(uuid())
+  tenantId   String
+  sessionId  String
+  studentId  String
+  status     String
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([sessionId])
+}
+
+model Exam {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  startDate  DateTime @db.Date
+  endDate    DateTime @db.Date
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([tenantId])
+}
+
+model StudentExamAggregate {
+  id          String   @id @default(uuid())
+  tenantId    String
+  examId      String
+  studentId   String
+  totalMarks  Float
+  percentage  Float
+  grade       String
+  classRank   Int?
+  sectionRank Int?
+  gpa         Float?
+  softDelete  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, examId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}

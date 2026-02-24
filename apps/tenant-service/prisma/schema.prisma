@@ -1,0 +1,523 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Tenant {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  status      String   @default("active")
+  domain      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TenantSetting {
+  id          String   @id @default(uuid())
+  tenantId    String
+  key         String
+  value       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@unique([tenantId, key])
+}
+
+model TenantAdmin {
+  id        String   @id @default(uuid())
+  tenantId  String
+  userId    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model AcademicYear {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  startDate  DateTime
+  endDate    DateTime
+  isActive   Boolean  @default(false)
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  classes            Class[]
+  studentEnrollments StudentEnrollment[]
+  periods            Period[]
+  attendanceSessions AttendanceSession[]
+  exams              Exam[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model Class {
+  id             String   @id @default(uuid())
+  tenantId       String
+  name           String
+  code           String
+  academicYearId String
+  createdBy      String?
+  updatedBy      String?
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  academicYear AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  sections     Section[]
+  subjects     Subject[]
+  assignments  ClassTeacherAssignment[]
+  enrollments  StudentEnrollment[]
+  periods      Period[]
+  attendanceSessions AttendanceSession[]
+  exams        Exam[]
+  classAggregates ClassExamAggregate[]
+
+  @@unique([tenantId, academicYearId, code])
+  @@index([tenantId])
+  @@index([academicYearId])
+}
+
+model Section {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  classId    String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  class       Class                     @relation(fields: [classId], references: [id], onDelete: Restrict)
+  assignments ClassTeacherAssignment[]
+  enrollments StudentEnrollment[]
+  periods     Period[]
+  attendanceSessions AttendanceSession[]
+
+  @@unique([tenantId, classId, name])
+  @@index([tenantId])
+  @@index([classId])
+}
+
+model Subject {
+  id         String   @id @default(uuid())
+  tenantId   String
+  name       String
+  code       String
+  classId    String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  class Class @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  examSubjects ExamSubject[]
+  studentMarks StudentMark[]
+  subjectAnalytics SubjectExamAnalytics[]
+
+  @@unique([tenantId, classId, code])
+  @@index([tenantId])
+  @@index([classId])
+}
+
+model Teacher {
+  id           String   @id @default(uuid())
+  tenantId     String
+  userId       String
+  employeeCode String
+  designation  String
+  createdBy    String?
+  updatedBy    String?
+  softDelete   Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignments ClassTeacherAssignment[]
+
+  @@unique([tenantId, userId])
+  @@unique([tenantId, employeeCode])
+  @@index([tenantId])
+}
+
+model Student {
+  id              String   @id @default(uuid())
+  tenantId        String
+  admissionNumber String
+  firstName       String
+  lastName        String
+  dateOfBirth     DateTime
+  gender          String
+  status          String   @default("ACTIVE")
+  createdBy       String?
+  updatedBy       String?
+  softDelete      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  enrollments StudentEnrollment[]
+  attendanceRecords AttendanceRecord[]
+  studentMarks StudentMark[]
+  examResults  StudentExamResult[]
+  examAggregates StudentExamAggregate[]
+  parentMappings ParentStudentMapping[]
+
+  @@unique([tenantId, admissionNumber])
+  @@index([tenantId])
+}
+
+model ClassTeacherAssignment {
+  id         String   @id @default(uuid())
+  tenantId   String
+  classId    String
+  sectionId  String
+  teacherId  String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, classId, sectionId])
+  @@index([tenantId])
+  @@index([teacherId])
+}
+
+model StudentEnrollment {
+  id             String   @id @default(uuid())
+  tenantId       String
+  studentId      String
+  classId        String
+  sectionId      String
+  academicYearId String
+  rollNumber     String
+  createdBy      String?
+  updatedBy      String?
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, studentId, academicYearId])
+  @@unique([tenantId, academicYearId, classId, sectionId, rollNumber])
+  @@index([tenantId])
+  @@index([classId])
+  @@index([sectionId])
+}
+
+model Parent {
+  id         String   @id @default(uuid())
+  tenantId   String
+  userId     String
+  firstName  String
+  lastName   String
+  phone      String?
+  email      String?
+  relation   String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  studentMappings ParentStudentMapping[]
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model ParentStudentMapping {
+  id         String   @id @default(uuid())
+  tenantId   String
+  parentId   String
+  studentId  String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  parent  Parent  @relation(fields: [parentId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, parentId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+model Period {
+  id             String   @id @default(uuid())
+  tenantId       String
+  name           String
+  startTime      DateTime @db.Time(0)
+  endTime        DateTime @db.Time(0)
+  classId        String
+  sectionId      String
+  academicYearId String
+  createdBy      String?
+  updatedBy      String?
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, classId, sectionId, name])
+  @@index([tenantId])
+}
+
+model AttendanceSession {
+  id             String   @id @default(uuid())
+  tenantId       String
+  date           DateTime @db.Date
+  classId        String
+  sectionId      String
+  academicYearId String
+  status         String
+  createdBy      String?
+  updatedBy      String?
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  records      AttendanceRecord[]
+
+  @@unique([tenantId, date, classId, sectionId])
+  @@index([tenantId])
+  @@index([date])
+}
+
+model AttendanceRecord {
+  id         String   @id @default(uuid())
+  tenantId   String
+  sessionId  String
+  studentId  String
+  status     String
+  remarks    String?
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  student Student           @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, sessionId, studentId])
+  @@index([tenantId])
+  @@index([sessionId])
+}
+
+model Exam {
+  id             String   @id @default(uuid())
+  tenantId       String
+  name           String
+  academicYearId String
+  classId        String
+  status         String   @default("DRAFT")
+  startDate      DateTime @db.Date
+  endDate        DateTime @db.Date
+  totalMarks     Float?
+  createdBy      String?
+  updatedBy      String?
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  academicYear AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  class        Class              @relation(fields: [classId], references: [id], onDelete: Restrict)
+  examSubjects ExamSubject[]
+  studentMarks StudentMark[]
+  results      StudentExamResult[]
+  studentAggregates StudentExamAggregate[]
+  classAggregates   ClassExamAggregate[]
+  subjectAnalytics  SubjectExamAnalytics[]
+
+  @@unique([tenantId, name, academicYearId, classId])
+  @@index([tenantId])
+  @@index([academicYearId])
+  @@index([classId])
+}
+
+model ExamSubject {
+  id         String   @id @default(uuid())
+  tenantId   String
+  examId     String
+  subjectId  String
+  maxMarks   Float
+  weightage  Float?
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, examId, subjectId])
+  @@index([tenantId])
+  @@index([examId])
+}
+
+model StudentMark {
+  id            String   @id @default(uuid())
+  tenantId      String
+  examId        String
+  subjectId     String
+  studentId     String
+  marksObtained Float
+  remarks       String?
+  createdBy     String?
+  updatedBy     String?
+  softDelete    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, examId, subjectId, studentId])
+  @@index([tenantId])
+  @@index([examId])
+  @@index([studentId])
+}
+
+model GradeScale {
+  id            String   @id @default(uuid())
+  tenantId      String
+  name          String
+  minPercentage Float
+  maxPercentage Float
+  grade         String
+  createdBy     String?
+  updatedBy     String?
+  softDelete    Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([tenantId, name, minPercentage])
+  @@index([tenantId])
+}
+
+model StudentExamResult {
+  id         String   @id @default(uuid())
+  tenantId   String
+  examId     String
+  studentId  String
+  totalMarks Float
+  percentage Float
+  grade      String
+  createdBy  String?
+  updatedBy  String?
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, examId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+model StudentExamAggregate {
+  id          String   @id @default(uuid())
+  tenantId    String
+  examId      String
+  studentId   String
+  totalMarks  Float
+  percentage  Float
+  grade       String
+  classRank   Int?
+  sectionRank Int?
+  gpa         Float?
+  createdBy   String?
+  updatedBy   String?
+  softDelete  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
+  student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, examId, studentId])
+  @@index([tenantId])
+  @@index([studentId])
+}
+
+model ClassExamAggregate {
+  id                String   @id @default(uuid())
+  tenantId          String
+  examId            String
+  classId           String
+  averageMarks      Float
+  averagePercentage Float
+  highestMarks      Float
+  lowestMarks       Float
+  passPercentage    Float
+  createdBy         String?
+  updatedBy         String?
+  softDelete        Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  exam  Exam  @relation(fields: [examId], references: [id], onDelete: Restrict)
+  class Class @relation(fields: [classId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, examId, classId])
+  @@index([tenantId])
+  @@index([classId])
+}
+
+model SubjectExamAnalytics {
+  id             String   @id @default(uuid())
+  tenantId       String
+  examId         String
+  subjectId      String
+  averageMarks   Float
+  highestMarks   Float
+  lowestMarks    Float
+  passPercentage Float
+  createdBy      String?
+  updatedBy      String?
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, examId, subjectId])
+  @@index([tenantId])
+  @@index([subjectId])
+}

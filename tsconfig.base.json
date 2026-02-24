@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "declaration": true,
+    "removeComments": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2022",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "moduleResolution": "node",
+    "paths": {
+      "@sme/common": ["libs/common/src"],
+      "@sme/common/*": ["libs/common/src/*"],
+      "@sme/auth": ["libs/auth/src"],
+      "@sme/auth/*": ["libs/auth/src/*"],
+      "@sme/messaging": ["libs/messaging/src"],
+      "@sme/messaging/*": ["libs/messaging/src/*"],
+      "@sme/config-client": ["libs/config-client/src"],
+      "@sme/config-client/*": ["libs/config-client/src/*"],
+      "@sme/tenant-client": ["libs/tenant-client/src"],
+      "@sme/tenant-client/*": ["libs/tenant-client/src/*"],
+      "@sme/logger": ["libs/logger/src"],
+      "@sme/logger/*": ["libs/logger/src/*"]
+    }
+  },
+  "exclude": ["node_modules", "dist"]
+}
