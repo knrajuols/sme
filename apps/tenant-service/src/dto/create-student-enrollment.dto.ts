@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, MinLength } from 'class-validator';
+import { IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateStudentEnrollmentDto {
   @ApiProperty({ example: 'f206c4dc-3c98-4438-9988-c9ff7ea5e0fb' })
@@ -21,5 +21,6 @@ export class CreateStudentEnrollmentDto {
   @ApiProperty({ example: '12' })
   @IsString()
   @MinLength(1)
+  @MaxLength(20)
   rollNumber!: string;
 }

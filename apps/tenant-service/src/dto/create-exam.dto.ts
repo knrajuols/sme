@@ -1,11 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsDate, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateExamDto {
   @ApiProperty({ example: 'Mid Term' })
   @IsString()
   @MinLength(2)
+  @MaxLength(200)
   name!: string;
 
   @ApiProperty({ example: 'deb2494c-37d6-4690-bd58-a724aa2ad257' })

@@ -1,5 +1,11 @@
 generator client {
   provider = "prisma-client-js"
+  // Local-output pattern: generates the Prisma client directly into the service
+  // source tree so that TypeScript resolves all types via a plain relative import
+  // (`./generated/prisma-client`) rather than through the @prisma/client package.
+  // This is the only fully portable approach on Windows monorepos where the
+  // node_modules symlink that @prisma/client relies on is never created.
+  output   = "../src/generated/prisma-client"
 }
 
 datasource db {
@@ -7,51 +13,251 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+// Tenant lifecycle state machine (RISK-08 fix).
+enum TenantStatus {
+  TRIAL
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+// School onboarding workflow — mirrors mandatory Task-1 requirement.
+enum SchoolStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+// Student lifecycle — replaces unchecked magic-string status column.
+enum StudentStatus {
+  ACTIVE
+  INACTIVE
+  TRANSFERRED
+  GRADUATED
+  // AI ADDED: RTE dropout tracking required by DISE/UDISE annual submission
+  DROPPED_OUT
+}
+
+// AI ADDED: Binary gender enum kept minimal; free-text preferredGender on Student for inclusivity
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+// AI ADDED: Blood group — required for medical emergency cards and govt health records
+enum BloodGroup {
+  A_POS
+  A_NEG
+  B_POS
+  B_NEG
+  AB_POS
+  AB_NEG
+  O_POS
+  O_NEG
+  UNKNOWN
+}
+
+// AI ADDED: Social category classification — mandatory for govt scholarship and RTE quota reporting
+enum StudentCategory {
+  GENERAL
+  OBC
+  SC
+  ST
+  EWS
+  PWD
+  // AI ADDED: CWSN = Children With Special Needs (UDISE+ field)
+  CWSN
+}
+
+// AI ADDED: Religion — required for DISE/UDISE government educational statistics reporting
+enum Religion {
+  HINDUISM
+  ISLAM
+  CHRISTIANITY
+  SIKHISM
+  BUDDHISM
+  JAINISM
+  OTHER
+  NOT_STATED
+}
+
+// AI ADDED: Parent/guardian relationship to student
+enum Relation {
+  FATHER
+  MOTHER
+  GUARDIAN
+  GRANDPARENT
+  SIBLING
+  OTHER
+}
+
+// Subject type — mandatory field per Task-1; drives timetable weight and marking schemes
+enum SubjectType {
+  CORE
+  ELECTIVE
+  OPTIONAL
+  // AI ADDED: Language and co-curricular are common Indian school subject categories
+  LANGUAGE
+  CO_CURRICULAR
+}
+
+// Attendance record status — enforces valid values at DB level.
+enum AttendanceStatus {
+  PRESENT
+  ABSENT
+  LATE
+  EXCUSED
+}
+
+// Attendance session status.
+enum AttendanceSessionStatus {
+  OPEN
+  CLOSED
+}
+
+// Exam workflow status — replaces magic-string default("DRAFT").
+// VERIFIED = marks entered, ready for publish aggregation.
+enum ExamStatus {
+  DRAFT
+  VERIFIED
+  PUBLISHED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
 model Tenant {
-  id          String   @id @default(uuid())
-  code        String   @unique
-  name        String
-  status      String   @default("active")
-  domain      String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String       @id @default(uuid())
+  code         String       @unique @db.VarChar(20)
+  name         String       @db.VarChar(200)
+  legalName    String?      @db.VarChar(200)
+  status       TenantStatus @default(TRIAL)
+  schoolStatus SchoolStatus @default(PENDING)
+  domain       String?      @db.VarChar(200)
+  trialEndDate DateTime?
+
+  // ── School Identity ────────────────────────────────────────────────────────
+  // AI ADDED: UDISE is India's Unified District Information System for Education —
+  // 11-digit code mandatory for all govt-recognised schools; unique nationally.
+  udiseCode         String? @unique @db.VarChar(11)
+  // AI ADDED: DISE / state affiliation code for board-level reporting
+  affiliationNumber String? @db.VarChar(50)
+  // AI ADDED: Board affiliation (CBSE, ICSE, State Board etc.)
+  board             String? @db.VarChar(100)
+
+  // ── Address ───────────────────────────────────────────────────────────────
+  address  String? @db.VarChar(500)
+  city     String? @db.VarChar(100)
+  state    String? @db.VarChar(100)
+  pincode  String? @db.VarChar(10)
+  // AI ADDED: District — required for UDISE block/district/state hierarchy filters
+  district String? @db.VarChar(100)
+
+  // ── Contact ───────────────────────────────────────────────────────────────
+  contactPhone    String? @db.VarChar(20)
+  // Unique: one admin email per school — prevents duplicate registrations.
+  contactEmail    String? @unique @db.VarChar(255)
+  website         String? @db.VarChar(255)
+  // Primary contact (school admin) name — captured at registration for comms.
+  schoolAdminName String? @db.VarChar(200)
+
+  // ── Establishment ─────────────────────────────────────────────────────────
+  establishmentYear Int?
+  // AI ADDED: School type — Govt / Aided / Private Unaided; mandated in UDISE
+  schoolType        String? @db.VarChar(50)
+  // AI ADDED: Management type — Central Govt / State Govt / Private etc.
+  managementType    String? @db.VarChar(100)
+  // AI ADDED: Lowest and highest class offered — UDISE reporting fields
+  lowestClass       String? @db.VarChar(10)
+  highestClass      String? @db.VarChar(10)
+
+  // ── Standard audit fields ─────────────────────────────────────────────────
+  softDelete Boolean  @default(false)
+  version    Int      @default(1)
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Back-relations for FK-enforced children (same DB as Tenant).
+  settings                TenantSetting[]
+  admins                  TenantAdmin[]
+  academicYears           AcademicYear[]
+  classes                 Class[]
+  sections                Section[]
+  subjects                Subject[]
+  // FK back-relations added for full referential integrity (Phase 2).
+  teachers                Teacher[]
+  students                Student[]
+  classTeacherAssignments ClassTeacherAssignment[]
+  studentEnrollments      StudentEnrollment[]
+  parents                 Parent[]
+  parentStudentMappings   ParentStudentMapping[]
+  periods                 Period[]
+  attendanceSessions      AttendanceSession[]
+  attendanceRecords       AttendanceRecord[]
+  exams                   Exam[]
+  examSubjects            ExamSubject[]
+  studentMarks            StudentMark[]
+  gradeScales             GradeScale[]
+  studentExamResults      StudentExamResult[]
+  studentExamAggregates   StudentExamAggregate[]
+  classExamAggregates     ClassExamAggregate[]
+  subjectExamAnalytics    SubjectExamAnalytics[]
 }
 
+// key is now sized; FK added — no orphan settings survive tenant deletion.
 model TenantSetting {
-  id          String   @id @default(uuid())
-  tenantId    String
-  key         String
-  value       Json
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@index([tenantId])
-  @@unique([tenantId, key])
-}
-
-model TenantAdmin {
   id        String   @id @default(uuid())
-  tenantId  String
-  userId    String?
+  tenantId  String   @db.VarChar(50)
+  key       String   @db.VarChar(200)
+  value     Json
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Cascade: settings are semantically owned by their tenant.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+}
+
+// FK added with Restrict — forces explicit admin de-assignment before tenant deletion.
+model TenantAdmin {
+  id        String   @id @default(uuid())
+  tenantId  String   @db.VarChar(50)
+  userId    String?  @db.VarChar(50)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Restrict: admin records must be removed before a tenant can be deleted.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Restrict)
+
+  // One user can hold only one admin record per tenant (cross-service integrity guard).
+  @@unique([tenantId, userId])
   @@index([tenantId])
   @@index([userId])
 }
 
 model AcademicYear {
   id         String   @id @default(uuid())
-  tenantId   String
-  name       String
+  tenantId   String   @db.VarChar(50)
+  name       String   @db.VarChar(100)
   startDate  DateTime
   endDate    DateTime
   isActive   Boolean  @default(false)
-  createdBy  String?
-  updatedBy  String?
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+
+  // FK-enforced tenant isolation — every academic year belongs to exactly one tenant.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   classes            Class[]
   studentEnrollments StudentEnrollment[]
@@ -61,137 +267,311 @@ model AcademicYear {
 
   @@unique([tenantId, name])
   @@index([tenantId])
+  // Dashboard: WHERE tenantId = ? AND isActive = true — O(log n)
+  @@index([tenantId, isActive])
 }
 
+// code = grade-level code e.g. "G10" — unique within (tenant, academicYear).
 model Class {
   id             String   @id @default(uuid())
-  tenantId       String
-  name           String
-  code           String
+  tenantId       String   @db.VarChar(50)
+  name           String   @db.VarChar(100)
+  code           String   @db.VarChar(20)
   academicYearId String
-  createdBy      String?
-  updatedBy      String?
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
   softDelete     Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  academicYear AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  sections     Section[]
-  subjects     Subject[]
-  assignments  ClassTeacherAssignment[]
-  enrollments  StudentEnrollment[]
-  periods      Period[]
+  // FK-enforced tenant isolation — every class belongs to exactly one tenant.
+  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear       AcademicYear             @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  sections           Section[]
+  assignments        ClassTeacherAssignment[]
+  enrollments        StudentEnrollment[]
+  periods            Period[]
   attendanceSessions AttendanceSession[]
-  exams        Exam[]
-  classAggregates ClassExamAggregate[]
+  exams              Exam[]
+  classAggregates    ClassExamAggregate[]
 
   @@unique([tenantId, academicYearId, code])
   @@index([tenantId])
   @@index([academicYearId])
+  // Seeding hot-path: find class by code within a tenant (without requiring academicYearId)
+  @@index([tenantId, code])
 }
 
 model Section {
-  id         String   @id @default(uuid())
-  tenantId   String
-  name       String
-  classId    String
-  createdBy  String?
-  updatedBy  String?
+  id       String @id @default(uuid())
+  tenantId String @db.VarChar(50)
+  name     String @db.VarChar(50)
+  classId  String
+
+  // AI ADDED: Maximum student capacity — enforces section strength limits; used in admission workflow
+  maxCapacity Int     @default(40)
+  // AI ADDED: Room / classroom label — used in timetable and infrastructure reports
+  roomLabel   String? @db.VarChar(50)
+
+  // Class teacher direct FK — satisfies Task-1 requirement
+  // Optional because sections can exist before teacher assignment
+  classTeacherId String?
+  classTeacher   Teacher? @relation(fields: [classTeacherId], references: [id], onDelete: SetNull)
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  class       Class                     @relation(fields: [classId], references: [id], onDelete: Restrict)
-  assignments ClassTeacherAssignment[]
-  enrollments StudentEnrollment[]
-  periods     Period[]
+  // FK-enforced tenant isolation — every section belongs to exactly one tenant.
+  tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  class              Class                    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  assignments        ClassTeacherAssignment[]
+  enrollments        StudentEnrollment[]
+  periods            Period[]
   attendanceSessions AttendanceSession[]
 
   @@unique([tenantId, classId, name])
   @@index([tenantId])
   @@index([classId])
+  // AI ADDED: Class teacher lookup for section header queries
+  @@index([classTeacherId])
 }
 
+// code = subject code e.g. "MATH" — unique within tenant.
 model Subject {
-  id         String   @id @default(uuid())
-  tenantId   String
-  name       String
-  code       String
-  classId    String
-  createdBy  String?
-  updatedBy  String?
+  id       String @id @default(uuid())
+  tenantId String @db.VarChar(50)
+  name     String @db.VarChar(100)
+  code     String @db.VarChar(20)
+
+  // Task-1 mandatory fields
+  type         SubjectType @default(CORE)
+  hasPractical Boolean     @default(false)
+
+  // AI ADDED: Maximum theory marks — used as default when creating ExamSubject entries
+  theoryMaxMarks    Float?  @default(100)
+  // AI ADDED: Maximum practical marks — relevant only when hasPractical = true
+  practicalMaxMarks Float?  @default(0)
+  // AI ADDED: Weekly periods/periods count — used by timetable generator
+  periodsPerWeek    Int     @default(5)
+  // AI ADDED: Language of instruction — critical for multilingual schools
+  medium            String? @db.VarChar(50)
+  // AI ADDED: Syllabus reference — e.g., "NCERT Class 10 Mathematics"
+  syllabusRef       String? @db.VarChar(200)
+  // AI ADDED: Is this subject included in GPA / rank calculation?
+  countForRank      Boolean @default(true)
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  class Class @relation(fields: [classId], references: [id], onDelete: Restrict)
+  // FK-enforced tenant isolation — every subject belongs to exactly one tenant.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  examSubjects ExamSubject[]
-  studentMarks StudentMark[]
+  examSubjects     ExamSubject[]
+  studentMarks     StudentMark[]
   subjectAnalytics SubjectExamAnalytics[]
 
-  @@unique([tenantId, classId, code])
+  @@unique([tenantId, code])
   @@index([tenantId])
-  @@index([classId])
+  // Report-generation hot-path: subject by code when classId not in filter scope
+  @@index([tenantId, code])
+  // AI ADDED: Subject type filter for core-vs-elective timetable split queries
+  @@index([tenantId, type])
 }
 
 model Teacher {
-  id           String   @id @default(uuid())
-  tenantId     String
-  userId       String
-  employeeCode String
-  designation  String
-  createdBy    String?
-  updatedBy    String?
-  softDelete   Boolean  @default(false)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           String  @id @default(uuid())
+  tenantId     String  @db.VarChar(50)
+  userId       String? @db.VarChar(50)
+  employeeCode String  @db.VarChar(50)
+  designation  String  @db.VarChar(100)
+  isActive     Boolean @default(true)
 
-  assignments ClassTeacherAssignment[]
+  // ── Personal Identity ─────────────────────────────────────────────────────
+  // AI ADDED: Full name mirrored here for reports that bypass IAM user join
+  firstName      String?   @db.VarChar(100)
+  lastName       String?   @db.VarChar(100)
+  dateOfBirth    DateTime? @db.Date
+  gender         Gender    @default(PREFER_NOT_TO_SAY)
+  motherTongue   String?   @db.VarChar(50)
+  // AI ADDED: Languages known — for class assignment matching in regional-medium schools
+  knownLanguages String?   @db.VarChar(200)
+  // AI ADDED: Nationality — needed for foreign faculty compliance
+  nationality    String    @default("Indian") @db.VarChar(50)
+
+  // ── Contact ───────────────────────────────────────────────────────────────
+  contactPhone     String? @db.VarChar(20)
+  email            String? @db.VarChar(200)
+  // AI ADDED: Alternate emergency contact — required by school HR policies
+  emergencyContact String? @db.VarChar(500)
+
+  // ── Employment ────────────────────────────────────────────────────────────
+  dateOfJoining         DateTime? @db.Date
+  // AI ADDED: Date of leaving — preserves HR record when teacher is soft-deleted
+  dateOfLeaving         DateTime? @db.Date
+  // AI ADDED: Employment type — Regular / Contract / Guest; affects payroll and compliance
+  employmentType        String?   @db.VarChar(50)
+  // AI ADDED: Subject specialisation(s) — comma-separated; aids timetable engine
+  subjectSpecialization String?   @db.VarChar(200)
+
+  // ── Qualifications & Compliance ───────────────────────────────────────────
+  // Stored as structured JSON string: [{degree, institution, year}]
+  qualifications   String?         @db.VarChar(1000)
+  // AI ADDED: Teaching licence / TET / CTET certificate number — RTE compliance
+  tetCertificateNo String?         @db.VarChar(50)
+  // AI ADDED: Category (SC/ST/OBC/GEN) — required for staff diversity reporting
+  category         StudentCategory @default(GENERAL)
+  religion         Religion        @default(NOT_STATED)
+  // AI ADDED: Aadhaar masked — required for PFMS salary transfer and govt audit
+  aadhaarMasked    String?         @db.VarChar(10)
+
+  // ── Photo ─────────────────────────────────────────────────────────────────
+  // AI ADDED: Object-storage URL for staff photo
+  photoUrl String? @db.VarChar(500)
+
+  // ── Audit ─────────────────────────────────────────────────────────────────
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // FK-enforced tenant isolation — every teacher belongs to exactly one tenant.
+  tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments   ClassTeacherAssignment[]
+  // AI ADDED: Sections where this teacher is designated class teacher
+  classSections Section[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, employeeCode])
+  @@unique([tenantId, email])
   @@index([tenantId])
+  // AI ADDED: Employment type filter for HR reports
+  @@index([tenantId, employmentType])
 }
 
 model Student {
-  id              String   @id @default(uuid())
-  tenantId        String
-  admissionNumber String
-  firstName       String
-  lastName        String
-  dateOfBirth     DateTime
-  gender          String
-  status          String   @default("ACTIVE")
-  createdBy       String?
-  updatedBy       String?
-  softDelete      Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id              String    @id @default(uuid())
+  tenantId        String    @db.VarChar(50)
+  admissionNumber String    @db.VarChar(50)
+  // Progressive profiling: join date can be backfilled once records are transferred
+  dateOfJoining   DateTime? @db.Date
 
-  enrollments StudentEnrollment[]
+  // ── Personal Identity ─────────────────────────────────────────────────────
+  firstName       String     @db.VarChar(100)
+  middleName      String?    @db.VarChar(100)
+  lastName        String     @db.VarChar(100)
+  // AI ADDED: Preferred name for display; used in report cards and portal
+  preferredName   String?    @db.VarChar(100)
+  // Progressive profiling: can be filled by parent after initial enrollment
+  dateOfBirth     DateTime?  @db.Date
+  // Default prevents DB-level null; front-end can prompt for confirmation later
+  gender          Gender     @default(PREFER_NOT_TO_SAY)
+  // AI ADDED: Free-text gender identity field for inclusive platforms
+  preferredGender String?    @db.VarChar(50)
+  bloodGroup      BloodGroup @default(UNKNOWN)
+  motherTongue    String?    @db.VarChar(50)
+  // AI ADDED: Nationality — defaults to Indian; needed for PIO/NRI student records
+  nationality     String     @default("Indian") @db.VarChar(50)
+
+  // ── Government & Compliance ───────────────────────────────────────────────
+  // AI ADDED: Aadhaar reference — stored masked (last 4 digits) for DIGI-Locker compliance;
+  // full Aadhaar MUST NOT be stored in plain text (UIDAI regulation)
+  aadhaarMasked  String?         @db.VarChar(10)
+  // AI ADDED: APAAR / Academic Bank of Credits ID — NEP 2020 mandate
+  apaarId        String?         @unique @db.VarChar(30)
+  // AI ADDED: Social category — mandatory for RTE quota, scholarship eligibility
+  category       StudentCategory @default(GENERAL)
+  religion       Religion        @default(NOT_STATED)
+  // AI ADDED: Caste / sub-caste (optional; used only for OBC/SC/ST govt reporting)
+  caste          String?         @db.VarChar(100)
+  // AI ADDED: RTE (Right to Education Act) admitted student flag — required for govt audit
+  isRteAdmission Boolean         @default(false)
+  // AI ADDED: CWSN flag — Children With Special Needs; triggers disability support workflow
+  isCwsn         Boolean         @default(false)
+  // AI ADDED: Disability type if CWSN — e.g., "Visual Impairment", "Hearing Impairment"
+  disabilityType String?         @db.VarChar(200)
+  // AI ADDED: BPL = Below Poverty Line; used for fee waiver and govt subsidy eligibility
+  isBpl          Boolean         @default(false)
+  // AI ADDED: Minority community flag — used for scholarship applications
+  isMinority     Boolean         @default(false)
+
+  // ── Health & Emergency ────────────────────────────────────────────────────
+  // AI ADDED: Known allergies — critical for school health/canteen operations
+  allergies         String? @db.VarChar(500)
+  // AI ADDED: Chronic medical conditions disclosed by parent
+  medicalConditions String? @db.VarChar(500)
+  // Format: "Name | Relationship | Phone" kept as structured string for simplicity
+  emergencyContact  String? @db.VarChar(500)
+
+  // ── Admission & Address ───────────────────────────────────────────────────
+  previousSchool String? @db.VarChar(200)
+  // AI ADDED: Transfer Certificate number from previous school
+  tcNumber       String? @db.VarChar(50)
+  // AI ADDED: Residential address for attendance zone and transport routing
+  addressLine    String? @db.VarChar(500)
+  city           String? @db.VarChar(100)
+  state          String? @db.VarChar(100)
+  pincode        String? @db.VarChar(10)
+
+  // ── Photo ─────────────────────────────────────────────────────────────────
+  // AI ADDED: Object-storage URL for student photo (ID cards, report cards)
+  photoUrl String? @db.VarChar(500)
+
+  // ── Lifecycle ─────────────────────────────────────────────────────────────
+  status        StudentStatus @default(ACTIVE)
+  // AI ADDED: Date the student left — required for government records on TC/ TC withdrawal
+  dateOfLeaving DateTime?     @db.Date
+  // AI ADDED: Reason for leaving — Transfer / Graduation / Dropout / Expulsion
+  leavingReason String?       @db.VarChar(200)
+
+  // ── Audit ─────────────────────────────────────────────────────────────────
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // FK-enforced tenant isolation — every student belongs to exactly one tenant.
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollments       StudentEnrollment[]
   attendanceRecords AttendanceRecord[]
-  studentMarks StudentMark[]
-  examResults  StudentExamResult[]
-  examAggregates StudentExamAggregate[]
-  parentMappings ParentStudentMapping[]
+  studentMarks      StudentMark[]
+  examResults       StudentExamResult[]
+  examAggregates    StudentExamAggregate[]
+  parentMappings    ParentStudentMapping[]
 
   @@unique([tenantId, admissionNumber])
+  // AI ADDED: APAAR uniqueness enforced at DB level
   @@index([tenantId])
+  // Name search hot-path (1,000-student school): WHERE tenantId = ? AND lastName ILIKE ?
+  @@index([tenantId, lastName, firstName])
+  // Status filter: WHERE tenantId = ? AND status = 'ACTIVE'
+  @@index([tenantId, status])
+  // AI ADDED: Category/RTE filter for govt compliance reports
+  @@index([tenantId, category])
+  @@index([tenantId, isRteAdmission])
 }
 
 model ClassTeacherAssignment {
   id         String   @id @default(uuid())
-  tenantId   String
+  tenantId   String   @db.VarChar(50)
   classId    String
   sectionId  String
   teacherId  String
-  createdBy  String?
-  updatedBy  String?
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every assignment belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   class   Class   @relation(fields: [classId], references: [id], onDelete: Restrict)
   section Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
   teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Restrict)
@@ -203,18 +583,20 @@ model ClassTeacherAssignment {
 
 model StudentEnrollment {
   id             String   @id @default(uuid())
-  tenantId       String
+  tenantId       String   @db.VarChar(50)
   studentId      String
   classId        String
   sectionId      String
   academicYearId String
-  rollNumber     String
-  createdBy      String?
-  updatedBy      String?
+  rollNumber     String   @db.VarChar(20)
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
   softDelete     Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every enrollment belongs to exactly one tenant.
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
   class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
   section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
@@ -223,139 +605,192 @@ model StudentEnrollment {
   @@unique([tenantId, studentId, academicYearId])
   @@unique([tenantId, academicYearId, classId, sectionId, rollNumber])
   @@index([tenantId])
+  @@index([studentId])
   @@index([classId])
   @@index([sectionId])
 }
 
 model Parent {
-  id         String   @id @default(uuid())
-  tenantId   String
-  userId     String
-  firstName  String
-  lastName   String
-  phone      String?
-  email      String?
-  relation   String
-  createdBy  String?
-  updatedBy  String?
+  id       String @id @default(uuid())
+  tenantId String @db.VarChar(50)
+  userId   String @db.VarChar(50)
+
+  // ── Personal Identity ─────────────────────────────────────────────────────
+  firstName String   @db.VarChar(100)
+  lastName  String   @db.VarChar(100)
+  // Default of GUARDIAN covers the most common case; can be updated during profile completion
+  relation  Relation @default(GUARDIAN)
+  gender    Gender   @default(PREFER_NOT_TO_SAY)
+
+  // ── Contact ───────────────────────────────────────────────────────────────
+  phone          String? @db.VarChar(20)
+  // AI ADDED: Alternate phone — critical for emergency contact chains
+  alternatePhone String? @db.VarChar(20)
+  email          String? @db.VarChar(255)
+  motherTongue   String? @db.VarChar(50)
+  // AI ADDED: Comma-separated list of languages — used for parent communication preferences
+  knownLanguages String? @db.VarChar(200)
+
+  // ── Demographics & Employment ─────────────────────────────────────────────
+  profession       String? @db.VarChar(100)
+  // AI ADDED: Annual income slab — used for fee waiver and RTE free-seat allocation
+  annualIncomeSlab String? @db.VarChar(50)
+  // AI ADDED: Education qualification — used in govt family socioeconomic profiling
+  education        String? @db.VarChar(100)
+
+  // ── Government & Compliance ───────────────────────────────────────────────
+  // AI ADDED: Aadhaar masked (last 4 digits) — parent identity for online fee + scholarship portals
+  aadhaarMasked String? @db.VarChar(10)
+
+  // ── Address ───────────────────────────────────────────────────────────────
+  addressLine String? @db.VarChar(500)
+  city        String? @db.VarChar(100)
+  state       String? @db.VarChar(100)
+  pincode     String? @db.VarChar(10)
+
+  // ── Audit ─────────────────────────────────────────────────────────────────
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every parent belongs to exactly one tenant.
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   studentMappings ParentStudentMapping[]
 
+  // One portal-user maps to exactly one parent record per tenant.
+  @@unique([tenantId, userId])
   @@index([tenantId])
   @@index([userId])
 }
 
 model ParentStudentMapping {
   id         String   @id @default(uuid())
-  tenantId   String
+  tenantId   String   @db.VarChar(50)
   parentId   String
   studentId  String
-  createdBy  String?
-  updatedBy  String?
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every parent-student mapping belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   parent  Parent  @relation(fields: [parentId], references: [id], onDelete: Restrict)
   student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, parentId, studentId])
   @@index([tenantId])
+  @@index([parentId])
   @@index([studentId])
 }
 
+// Timetable slot — unique name per (tenant, academicYear, class, section).
 model Period {
   id             String   @id @default(uuid())
-  tenantId       String
-  name           String
+  tenantId       String   @db.VarChar(50)
+  name           String   @db.VarChar(50)
   startTime      DateTime @db.Time(0)
   endTime        DateTime @db.Time(0)
   classId        String
   sectionId      String
   academicYearId String
-  createdBy      String?
-  updatedBy      String?
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
   softDelete     Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every period belongs to exactly one tenant.
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
   section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, academicYearId, classId, sectionId, name])
   @@index([tenantId])
+  // Timetable fetch: all periods for a class-section on a given day
+  @@index([tenantId, classId, sectionId])
 }
 
 model AttendanceSession {
-  id             String   @id @default(uuid())
-  tenantId       String
-  date           DateTime @db.Date
+  id             String                  @id @default(uuid())
+  tenantId       String                  @db.VarChar(50)
+  date           DateTime                @db.Date
   classId        String
   sectionId      String
   academicYearId String
-  status         String
-  createdBy      String?
-  updatedBy      String?
-  softDelete     Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  status         AttendanceSessionStatus @default(OPEN)
+  createdBy      String?                 @db.VarChar(50)
+  updatedBy      String?                 @db.VarChar(50)
+  softDelete     Boolean                 @default(false)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
-  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
-  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  // FK-enforced tenant isolation — every attendance session belongs to exactly one tenant.
+  tenant       Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  class        Class              @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section      Section            @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   records      AttendanceRecord[]
 
   @@unique([tenantId, date, classId, sectionId])
   @@index([tenantId])
   @@index([date])
+  // Class attendance history: WHERE tenantId = ? AND classId = ? AND date BETWEEN ?
+  @@index([tenantId, classId, date])
 }
 
 model AttendanceRecord {
-  id         String   @id @default(uuid())
-  tenantId   String
+  id         String           @id @default(uuid())
+  tenantId   String           @db.VarChar(50)
   sessionId  String
   studentId  String
-  status     String
-  remarks    String?
-  createdBy  String?
-  updatedBy  String?
-  softDelete Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  status     AttendanceStatus
+  remarks    String?          @db.VarChar(500)
+  createdBy  String?          @db.VarChar(50)
+  updatedBy  String?          @db.VarChar(50)
+  softDelete Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
 
+  // FK-enforced tenant isolation — every attendance record belongs to exactly one tenant.
+  tenant  Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   session AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
   student Student           @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, sessionId, studentId])
   @@index([tenantId])
   @@index([sessionId])
+  // Student attendance history: WHERE tenantId = ? AND studentId = ?
+  @@index([tenantId, studentId])
 }
 
 model Exam {
-  id             String   @id @default(uuid())
-  tenantId       String
-  name           String
+  id             String     @id @default(uuid())
+  tenantId       String     @db.VarChar(50)
+  name           String     @db.VarChar(200)
   academicYearId String
   classId        String
-  status         String   @default("DRAFT")
-  startDate      DateTime @db.Date
-  endDate        DateTime @db.Date
+  status         ExamStatus @default(DRAFT)
+  startDate      DateTime   @db.Date
+  endDate        DateTime   @db.Date
   totalMarks     Float?
-  createdBy      String?
-  updatedBy      String?
-  softDelete     Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdBy      String?    @db.VarChar(50)
+  updatedBy      String?    @db.VarChar(50)
+  softDelete     Boolean    @default(false)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
-  academicYear AcademicYear       @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
-  class        Class              @relation(fields: [classId], references: [id], onDelete: Restrict)
-  examSubjects ExamSubject[]
-  studentMarks StudentMark[]
-  results      StudentExamResult[]
+  // FK-enforced tenant isolation — every exam belongs to exactly one tenant.
+  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear      AcademicYear           @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  class             Class                  @relation(fields: [classId], references: [id], onDelete: Restrict)
+  examSubjects      ExamSubject[]
+  studentMarks      StudentMark[]
+  results           StudentExamResult[]
   studentAggregates StudentExamAggregate[]
   classAggregates   ClassExamAggregate[]
   subjectAnalytics  SubjectExamAnalytics[]
@@ -364,43 +799,50 @@ model Exam {
   @@index([tenantId])
   @@index([academicYearId])
   @@index([classId])
+  // Exam status dashboard: WHERE tenantId = ? AND status IN (PUBLISHED, ONGOING)
+  @@index([tenantId, status])
 }
 
 model ExamSubject {
   id         String   @id @default(uuid())
-  tenantId   String
+  tenantId   String   @db.VarChar(50)
   examId     String
   subjectId  String
   maxMarks   Float
   weightage  Float?
-  createdBy  String?
-  updatedBy  String?
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every exam subject belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, examId, subjectId])
   @@index([tenantId])
   @@index([examId])
+  @@index([subjectId])
 }
 
 model StudentMark {
   id            String   @id @default(uuid())
-  tenantId      String
+  tenantId      String   @db.VarChar(50)
   examId        String
   subjectId     String
   studentId     String
   marksObtained Float
-  remarks       String?
-  createdBy     String?
-  updatedBy     String?
+  remarks       String?  @db.VarChar(500)
+  createdBy     String?  @db.VarChar(50)
+  updatedBy     String?  @db.VarChar(50)
   softDelete    Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every student mark belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
   student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
@@ -409,75 +851,90 @@ model StudentMark {
   @@index([tenantId])
   @@index([examId])
   @@index([studentId])
+  // Report-card hot-path: all marks for one student across all subjects in one exam
+  @@index([tenantId, studentId, examId])
+  // Subject-analytics hot-path: all marks for one subject across all students in one exam
+  @@index([tenantId, subjectId, examId])
 }
 
 model GradeScale {
   id            String   @id @default(uuid())
-  tenantId      String
-  name          String
+  tenantId      String   @db.VarChar(50)
+  name          String   @db.VarChar(100)
   minPercentage Float
   maxPercentage Float
-  grade         String
-  createdBy     String?
-  updatedBy     String?
+  grade         String   @db.VarChar(10)
+  createdBy     String?  @db.VarChar(50)
+  updatedBy     String?  @db.VarChar(50)
   softDelete    Boolean  @default(false)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every grade scale belongs to exactly one tenant.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@unique([tenantId, name, minPercentage])
   @@index([tenantId])
+  // Grade calculation: WHERE tenantId = ? AND minPercentage <= :pct AND maxPercentage >= :pct
+  @@index([tenantId, minPercentage, maxPercentage])
 }
 
 model StudentExamResult {
   id         String   @id @default(uuid())
-  tenantId   String
+  tenantId   String   @db.VarChar(50)
   examId     String
   studentId  String
   totalMarks Float
   percentage Float
-  grade      String
-  createdBy  String?
-  updatedBy  String?
+  grade      String   @db.VarChar(10)
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every student exam result belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
   student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, examId, studentId])
   @@index([tenantId])
+  @@index([examId])
   @@index([studentId])
 }
 
 model StudentExamAggregate {
   id          String   @id @default(uuid())
-  tenantId    String
+  tenantId    String   @db.VarChar(50)
   examId      String
   studentId   String
   totalMarks  Float
   percentage  Float
-  grade       String
+  grade       String   @db.VarChar(10)
   classRank   Int?
   sectionRank Int?
   gpa         Float?
-  createdBy   String?
-  updatedBy   String?
+  createdBy   String?  @db.VarChar(50)
+  updatedBy   String?  @db.VarChar(50)
   softDelete  Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every student exam aggregate belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
   student Student @relation(fields: [studentId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, examId, studentId])
   @@index([tenantId])
+  @@index([examId])
   @@index([studentId])
 }
 
 model ClassExamAggregate {
   id                String   @id @default(uuid())
-  tenantId          String
+  tenantId          String   @db.VarChar(50)
   examId            String
   classId           String
   averageMarks      Float
@@ -485,39 +942,73 @@ model ClassExamAggregate {
   highestMarks      Float
   lowestMarks       Float
   passPercentage    Float
-  createdBy         String?
-  updatedBy         String?
+  createdBy         String?  @db.VarChar(50)
+  updatedBy         String?  @db.VarChar(50)
   softDelete        Boolean  @default(false)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  exam  Exam  @relation(fields: [examId], references: [id], onDelete: Restrict)
-  class Class @relation(fields: [classId], references: [id], onDelete: Restrict)
+  // FK-enforced tenant isolation — every class exam aggregate belongs to exactly one tenant.
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  exam   Exam   @relation(fields: [examId], references: [id], onDelete: Restrict)
+  class  Class  @relation(fields: [classId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, examId, classId])
   @@index([tenantId])
+  @@index([examId])
   @@index([classId])
 }
 
 model SubjectExamAnalytics {
   id             String   @id @default(uuid())
-  tenantId       String
+  tenantId       String   @db.VarChar(50)
   examId         String
   subjectId      String
   averageMarks   Float
   highestMarks   Float
   lowestMarks    Float
   passPercentage Float
-  createdBy      String?
-  updatedBy      String?
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
   softDelete     Boolean  @default(false)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
+  // FK-enforced tenant isolation — every subject analytics record belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
   subject Subject @relation(fields: [subjectId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, examId, subjectId])
   @@index([tenantId])
+  @@index([examId])
   @@index([subjectId])
+}
+
+// ─── OutboxEvent ──────────────────────────────────────────────────────────────
+// Transactional outbox for reliable async event publishing (R-01 fix).
+// Written in the same DB transaction as business data; relay publishes to MQ.
+model OutboxEvent {
+  id          String    @id @default(uuid())
+  tenantId    String    @db.VarChar(50)
+  eventType   String    @db.VarChar(100)
+  routingKey  String    @db.VarChar(200)
+  payload     Json
+  published   Boolean   @default(false)
+  publishedAt DateTime?
+  attempts    Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([published, createdAt])
+  @@index([tenantId])
+}
+
+// ─── ProcessedEvent ───────────────────────────────────────────────────────────
+model ProcessedEvent {
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  eventType   String   @db.VarChar(100)
+  processedAt DateTime @default(now())
+
+  @@index([processedAt])
 }

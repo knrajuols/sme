@@ -2,27 +2,30 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   ArrayMinSize,
   IsArray,
-  IsIn,
+  IsEnum,
   IsOptional,
   IsString,
+  MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { AttendanceStatus } from '../enums';
 
 class AttendanceRecordItemDto {
   @ApiProperty({ example: '70aca6ba-500a-48b3-bd86-d39ab30cf1e2' })
   @IsString()
   studentId!: string;
 
-  @ApiProperty({ example: 'PRESENT', enum: ['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'] })
-  @IsIn(['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'])
-  status!: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
+  @ApiProperty({ example: 'PRESENT', enum: AttendanceStatus })
+  @IsEnum(AttendanceStatus)
+  status!: AttendanceStatus;
 
   @ApiPropertyOptional({ example: 'Arrived 5 minutes late' })
   @IsOptional()
   @IsString()
   @MinLength(1)
+  @MaxLength(500)
   remarks?: string;
 }
 

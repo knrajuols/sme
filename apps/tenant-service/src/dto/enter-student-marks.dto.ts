@@ -6,6 +6,7 @@ import {
   IsNumber,
   IsOptional,
   IsString,
+  MaxLength,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -23,6 +24,7 @@ class StudentMarkEntryDto {
   @ApiPropertyOptional({ example: 'Good performance' })
   @IsOptional()
   @IsString()
+  @MaxLength(500)
   remarks?: string;
 }
 
