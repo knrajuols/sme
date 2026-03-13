@@ -1,0 +1,55 @@
+# =============================================================================
+#  SME Platform — Infrastructure Services (Cold-Boot Compose)
+#  Manages: RabbitMQ (AMQP) + Redis (Cache/Session)
+#
+#  Usage: docker compose -f docker-compose.infra.yml up -d
+#         docker compose -f docker-compose.infra.yml down
+#
+#  Credentials mirror all apps/<service>/.env files:
+#    RabbitMQ  → amqp://smeadmin:smeadmin123@localhost:5672
+#    Redis     → redis://localhost:6379
+# =============================================================================
+
+services:
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: sme-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI  →  http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: smeadmin
+      RABBITMQ_DEFAULT_PASS: smeadmin123
+      RABBITMQ_DEFAULT_VHOST: /
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    volumes:
+      - sme_rabbitmq_data:/var/lib/rabbitmq
+
+  redis:
+    image: redis:7-alpine
+    container_name: sme-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: redis-server --save 60 1 --loglevel warning
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+    volumes:
+      - sme_redis_data:/data
+
+volumes:
+  sme_rabbitmq_data:
+    driver: local
+  sme_redis_data:
+    driver: local

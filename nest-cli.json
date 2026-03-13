@@ -4,72 +4,117 @@
   "monorepo": true,
   "root": "apps/api-gateway",
   "sourceRoot": "apps/api-gateway/src",
+  "compilerOptions": {
+    "tsConfigPath": "tsconfig.json"
+  },
   "projects": {
     "api-gateway": {
       "type": "application",
       "root": "apps/api-gateway",
       "entryFile": "main",
-      "sourceRoot": "apps/api-gateway/src"
+      "sourceRoot": "apps/api-gateway/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/api-gateway/tsconfig.app.json"
+      }
     },
     "iam-service": {
       "type": "application",
       "root": "apps/iam-service",
       "entryFile": "main",
-      "sourceRoot": "apps/iam-service/src"
+      "sourceRoot": "apps/iam-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/iam-service/tsconfig.app.json"
+      }
     },
     "tenant-service": {
       "type": "application",
       "root": "apps/tenant-service",
       "entryFile": "main",
-      "sourceRoot": "apps/tenant-service/src"
+      "sourceRoot": "apps/tenant-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/tenant-service/tsconfig.app.json"
+      }
     },
     "config-service": {
       "type": "application",
       "root": "apps/config-service",
       "entryFile": "main",
-      "sourceRoot": "apps/config-service/src"
+      "sourceRoot": "apps/config-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/config-service/tsconfig.app.json"
+      }
     },
     "audit-service": {
       "type": "application",
       "root": "apps/audit-service",
       "entryFile": "main",
-      "sourceRoot": "apps/audit-service/src"
+      "sourceRoot": "apps/audit-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/audit-service/tsconfig.app.json"
+      }
+    },
+    "portal-service": {
+      "type": "application",
+      "root": "apps/portal-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/portal-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/portal-service/tsconfig.app.json"
+      }
     },
     "common": {
       "type": "library",
       "root": "libs/common",
       "entryFile": "index",
-      "sourceRoot": "libs/common/src"
+      "sourceRoot": "libs/common/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/common/tsconfig.lib.json"
+      }
     },
     "auth": {
       "type": "library",
       "root": "libs/auth",
       "entryFile": "index",
-      "sourceRoot": "libs/auth/src"
+      "sourceRoot": "libs/auth/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/auth/tsconfig.lib.json"
+      }
     },
     "messaging": {
       "type": "library",
       "root": "libs/messaging",
       "entryFile": "index",
-      "sourceRoot": "libs/messaging/src"
+      "sourceRoot": "libs/messaging/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/messaging/tsconfig.lib.json"
+      }
     },
     "config-client": {
       "type": "library",
       "root": "libs/config-client",
       "entryFile": "index",
-      "sourceRoot": "libs/config-client/src"
+      "sourceRoot": "libs/config-client/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/config-client/tsconfig.lib.json"
+      }
     },
     "tenant-client": {
       "type": "library",
       "root": "libs/tenant-client",
       "entryFile": "index",
-      "sourceRoot": "libs/tenant-client/src"
+      "sourceRoot": "libs/tenant-client/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/tenant-client/tsconfig.lib.json"
+      }
     },
     "logger": {
       "type": "library",
       "root": "libs/logger",
       "entryFile": "index",
-      "sourceRoot": "libs/logger/src"
+      "sourceRoot": "libs/logger/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/logger/tsconfig.lib.json"
+      }
     }
   }
 }

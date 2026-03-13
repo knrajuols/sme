@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsOptional, IsString, Matches, MinLength } from 'class-validator';
+import { IsEmail, IsOptional, IsString, Length, Matches, MinLength } from 'class-validator';
 
 export class CreatePlatformTenantDto {
   @ApiProperty({ example: 'greenwood-academy' })
@@ -11,6 +11,42 @@ export class CreatePlatformTenantDto {
   @IsString()
   @MinLength(2)
   schoolName!: string;
+
+  @ApiPropertyOptional({ example: '29150400615' })
+  @IsOptional()
+  @IsString()
+  @Length(11, 11)
+  udiseCode?: string;
+
+  @ApiPropertyOptional({ example: '42, Main Road, Koramangala' })
+  @IsOptional()
+  @IsString()
+  @MinLength(5)
+  address?: string;
+
+  @ApiPropertyOptional({ example: 'Bengaluru' })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  city?: string;
+
+  @ApiPropertyOptional({ example: 'Karnataka' })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  state?: string;
+
+  @ApiPropertyOptional({ example: 'Bengaluru Urban' })
+  @IsOptional()
+  @IsString()
+  @MinLength(2)
+  district?: string;
+
+  @ApiPropertyOptional({ example: '560034' })
+  @IsOptional()
+  @IsString()
+  @Matches(/^\d{6}$/)
+  pincode?: string;
 
   @ApiProperty({ example: 'Mary Johnson' })
   @IsString()

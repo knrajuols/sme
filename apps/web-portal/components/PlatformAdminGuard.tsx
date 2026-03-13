@@ -1,0 +1,54 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+import { getMeClaims, getToken } from '../lib/auth';
+
+/**
+ * Client-side route guard for /web-admin/* routes.
+ *
+ * On mount it reads the JWT from localStorage and inspects the `roles` claim:
+ *   - No token          → redirect to /login
+ *   - PLATFORM_ADMIN    → allow through (renders children)
+ *   - SCHOOL_ADMIN      → redirect to /admin/dashboard
+ *   - Any other role    → redirect to /login
+ */
+export function PlatformAdminGuard({ children }: { children: React.ReactNode }) {
+  const [authorized, setAuthorized] = useState(false);
+
+  useEffect(() => {
+    if (!getToken()) {
+      window.location.href = '/login';
+      return;
+    }
+
+    void getMeClaims().then((claims) => {
+      if (!claims) {
+        window.location.href = '/login';
+        return;
+      }
+
+      if (claims.roles.includes('PLATFORM_ADMIN')) {
+        setAuthorized(true);
+        return;
+      }
+
+      // School admin → their portal
+      if (claims.roles.includes('SCHOOL_ADMIN')) {
+        window.location.href = '/admin/dashboard';
+      } else {
+        window.location.href = '/login';
+      }
+    });
+  }, []);
+
+  if (!authorized) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-sm text-slate-400">Verifying access…</p>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}

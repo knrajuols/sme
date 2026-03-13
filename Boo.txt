@@ -1,0 +1,81 @@
+
+
+Complete Architectural Audit — SME Platform
+Audit Matrix
+Component	Pillar 1 — BOOTALL: Invocation (sme-fullboot.ps1)	Pillar 2 — BOOTALL: Boot Verification (sme-fullboot.ps1)	Pillar 3 — Dashboard Monitoring (sme-monitor.js)
+Docker	Checks docker info exit code; if non-zero, calls Start-Process "Docker Desktop.exe"	❌ CLI loop: re-polls docker info every 4s (exit code = 0), up to 90s	❌ CLI: child_process.exec('docker info'), timeout 1500ms. Status = running/stopped based on exit code.
+Redis	docker compose -f docker-compose.infra.yml up -d (shared with RabbitMQ)	⚠️ Two-phase: (1) ✅ .NET TcpClient.BeginConnect(6379, 400ms) then (2) ❌ CLI: docker exec sme-redis redis-cli ping → checks for literal PONG, 30s total	⚠️ Status: ❌ CLI docker inspect --format "{{.State.Status}}" (timeout 1500ms). Health: ✅ native net.Socket.connect(:6379), HEALTH_TIMEOUT 1500ms.
+RabbitMQ	docker compose -f docker-compose.infra.yml up -d (shared with Redis)	⚠️ Delegates to Docker's own healthcheck: polls ❌ CLI docker inspect --format '{{.State.Health.Status}}' until value = "healthy", 90s total (healthcheck internally runs rabbitmq-diagnostics ping)	⚠️ Status: ❌ CLI docker inspect --format "{{.State.Status}}" (timeout 1500ms). Health: ✅ native net.Socket.connect(:5672), HEALTH_TIMEOUT 1500ms.
+PostgreSQL	.NET TcpClient check; if port closed, calls Start-Service 'postgresql*' (Windows service manager)	✅ Two-phase: (1) .NET TcpClient.BeginConnect(5432) then (2) ✅ Layer 7: psql -h localhost -c 'SELECT 1' confirms engine accepts queries, not just TCP SYN. 30s each.	⚠️ Status: ❌ netstat-derived: pidMap[5432] — netstat -ano text parse (CLI, 3000ms timeout). Health (when portUp): ✅ native net.Socket.connect(:5432). No SELECT 1 in ongoing monitoring.
+Prisma: iam-service	npx prisma generate --schema apps/iam-service/prisma/schema.prisma (synchronous, sequential)	✅ Test-Path query_engine-windows.dll.node — verifies physical DLL binary exists on disk	⚠️ fs.existsSync('apps/iam-service/src/generated/prisma-client') — directory existence only, DLL binary not checked
+Prisma: tenant-service	npx prisma generate --schema apps/tenant-service/prisma/schema.prisma	✅ Test-Path query_engine-windows.dll.node	⚠️ fs.existsSync(...) — directory only
+Prisma: config-service	npx prisma generate --schema apps/config-service/prisma/schema.prisma	✅ Test-Path query_engine-windows.dll.node	⚠️ fs.existsSync(...) — directory only
+Prisma: audit-service	npx prisma generate --schema apps/audit-service/prisma/schema.prisma	✅ Test-Path query_engine-windows.dll.node	⚠️ fs.existsSync(...) — directory only
+Prisma: portal-service	npx prisma generate --schema apps/portal-service/prisma/schema.prisma	✅ Test-Path query_engine-windows.dll.node	⚠️ fs.existsSync(...) — directory only
+iam-service	Start-Process powershell.exe -EncodedCommand running npm run start:dev:iam; stdout/stderr → logs/iam-service.log (hidden, background)	✅ Layer 7: Invoke-WebRequest "http://localhost:3001/health/live" polls until HTTP 2xx, 90s timeout	⚠️ Status: ❌ netstat-derived (pidMap[3001]). Health: ✅ native http.request(:3001, '/health') GET, 1500ms.
+tenant-service	Same pattern → npm run start:dev:tenant → logs/tenant-service.log	✅ Layer 7: http://localhost:3002/health/live HTTP 2xx, 75s	⚠️ Status: ❌ netstat. Health: ✅ http.request(:3002, '/health').
+config-service	Same → npm run start:dev:config → logs/config-service.log	✅ Layer 7: http://localhost:3003/health/live HTTP 2xx, 75s	⚠️ Status: ❌ netstat. Health: ✅ http.request(:3003, '/health').
+audit-service	Same → npm run start:dev:audit → logs/audit-service.log	✅ Layer 7: http://localhost:3004/health/live HTTP 2xx, 75s	⚠️ Status: ❌ netstat. Health: ✅ http.request(:3004, '/health').
+portal-service	Same → npm run start:dev:portal → logs/portal-service.log	✅ Layer 7: http://localhost:3005/health/live HTTP 2xx, 75s	⚠️ Status: ❌ netstat. Health: ✅ http.request(:3005, '/health').
+api-gateway	Same → npm run start:dev:api-gateway → logs/api-gateway.log	✅ Layer 7: http://localhost:3000/health/live HTTP 2xx, 90s	⚠️ Status: ❌ netstat. Health: ✅ http.request(:3000, '/health').
+web-admin	Same → npm run dev:web-admin → logs/web-admin.log	✅ Layer 7: Invoke-WebRequest "http://localhost:3101/" with redirect follow, 180s	⚠️ Status: ❌ netstat. Health: ❌ http.request(:3101, '/health') → Next.js has no /health route — always returns HTTP 404
+web-portal	Same → npm run dev:web-portal → logs/web-portal.log	✅ Layer 7: Invoke-WebRequest "http://localhost:3102/" with redirect follow, 180s	⚠️ Status: ❌ netstat. Health: ❌ http.request(:3102, '/health') → Next.js has no /health route — always returns HTTP 404
+Supporting Sections (sme-monitor.js only)
+Section	Mechanism	Assessment
+DB Schema Health (4 DBs)	child_process.execFile('psql', ...) querying information_schema.tables per database. PGCONNECT_TIMEOUT=2, execFile timeout: 4000ms. Background-cached (8s TTL via _statusCache).	✅ Layer 7 SQL — genuine readiness check. ⚠️ portal_db is missing from the 4 connections checked (iam_db, tenant_db, config_db, audit_db).
+Pre-flight Checks (11 probes)	11× probeHttp() (native http.request), HEALTH_TIMEOUT 1500ms each. Background-cached.	✅ Fully Layer 7. ⚠️ probes /iam/auth/token expecting HTTP 405 — a POST-only endpoint; GET returning 405 is valid but unusual as a health signal.
+Infra Version Detection	detectInfraVersion(): ❌ 4× CLI: docker version --format, docker exec sme-redis redis-cli info server, docker exec sme-rabbitmq rabbitmqctl version, psql --version. Each timeout: 1500ms. Background-cached.	❌ All 4 are CLI-based. Runs every 8s in background.
+Stage 0 Cleanup (fullboot only)	Uses netstat -ano (CLI) to find PIDs on SME ports, then Get-CimInstance Win32_Process (WMI) to hunt zombie node.exe by command-line path.	⚠️ netstat is CLI; Get-CimInstance is native WMI. One-time operation — lower risk than ongoing polling.
+Architectural Weakness Analysis
+Weakness 1 — Docker CLI is woven into ongoing monitoring (Critical)
+
+All three Docker-managed components (Docker daemon itself, Redis, RabbitMQ) resolve their status via CLI sub-process execution on every 8-second background refresh:
+
+docker info (Docker status)
+docker inspect --format "{{.State.Status}}" sme-redis (Redis status)
+docker inspect --format "{{.State.Status}}" sme-rabbitmq (RabbitMQ status)
+When Docker Desktop is not running (the common cold-start state), each of these commands hangs until its 1500ms timeout fires. The three calls are parallelized inside gatherStatus(), but the blocking characteristic remains — and the result is misleading 'warning' statuses rather than a clean 'stopped'.
+
+The native alternative for Redis is a raw TCP + Redis protocol PING (net.Socket → send *1\r\n$4\r\nPING\r\n, expect +PONG). For RabbitMQ the management HTTP API at http://localhost:15672/api/health/checks/aliveness/%2F returns {"status":"ok"} with no CLI involved. Docker itself has no universally-available pure-Node alternative, but its check could be gated so it only runs when a container-based check is already inconclusive.
+
+Weakness 2 — netstat -ano used for all 8 backend/frontend service status decisions
+
+All eight NestJS/Next.js services set their status field based on whether pidMap[port] is populated — i.e., whether netstat -ano found a LISTENING TCP entry. This is doubly inefficient:
+
+It runs a full OS-level netstat -ano (enumerating all connections) on every refresh cycle, just to find 8 specific ports.
+The status derived from it is redundant: if the HTTP /health probe (Layer 7) already returns 200, the service is obviously running. If it returns null/timeout, it is stopped. netstat adds no information that the HTTP probe doesn't already provide, and it is far more expensive.
+The native Node.js alternative is net.createServer().listen(port): if it throws EADDRINUSE, the port is occupied. Or — cleaner — simply derive status directly from the HTTP health probe result, eliminating the port-scan pass entirely for these services.
+
+Weakness 3 — Frontend health probe endpoints return 404 (High)
+
+probeHttp(3101, '/health') and probeHttp(3102, '/health') are called on web-admin and web-portal while running. Next.js has no built-in /health route. The result is health: 'HTTP 404' displayed permanently on the dashboard while the app is healthy. The status shows running (from netstat) but health shows HTTP 404 — a contradiction that erodes trust in the dashboard.
+
+The correct probe for a Next.js app is either GET / (which returns 200 or 307) or a purpose-built pages/api/health.ts route returning { ok: true }.
+
+Weakness 4 — PostgreSQL ongoing monitoring is Layer 4 only (Medium)
+
+Boot verification correctly uses psql -c 'SELECT 1' to confirm the engine is fully accepting queries. The ongoing dashboard monitor only does net.Socket.connect(:5432) (TCP). PostgreSQL's port can be open while the engine is still replaying WAL after a crash ("database system is starting up"), or in a long checkpoint. A TCP OK on the dashboard would falsely show running and health: TCP OK in such a state.
+
+Since sme-monitor.js has no npm dependencies, a SELECT 1 check requires spawning psql — acceptable as a lower-frequency supplementary check (e.g., every 30s) separate from the 8s refresh loop.
+
+Weakness 5 — Prisma client monitoring checks directory, not the DLL binary (Low)
+
+fs.existsSync('apps/iam-service/src/generated/prisma-client') confirms the directory exists. The actual artifact that fails (and that sme-fullboot.ps1 correctly validates post-generate) is query_engine-windows.dll.node. A directory can persist from a previous generate while the DLL itself is missing or zero-bytes after a failed generation. The monitor should check fs.existsSync('.../query_engine-windows.dll.node') for a truthful generated vs missing status.
+
+Weakness 6 — detectInfraVersion() runs CLI commands on every background refresh cycle (Low)
+
+docker version, docker exec sme-redis redis-cli info server, docker exec sme-rabbitmq rabbitmqctl version, and psql --version all fire every 8 seconds in the background cache loop. These are not time-critical: infrastructure versions do not change between refreshes. This code already has a 6-hour TTL cache (LATEST_VER_CACHE) for the remote latest-version fetches — but there is no TTL for the local installed versions. A separate long-TTL cache (e.g., 10 minutes, or fetch-once at startup) for local version detection would eliminate these CLI forks entirely after the first cycle.
+
+Summary Rating
+Component	BOOTALL Verification	Dashboard Monitoring
+Docker	❌ CLI only	❌ CLI only
+Redis	⚠️ TCP + Docker CLI PING	⚠️ Docker CLI inspect + ✅ TCP
+RabbitMQ	⚠️ Delegates to Docker healthcheck CLI	⚠️ Docker CLI inspect + ✅ TCP
+PostgreSQL	✅ TCP + Layer 7 SELECT 1	⚠️ TCP only (no SELECT 1)
+Prisma (×5)	✅ DLL binary on disk	⚠️ Directory only
+Backend services (×6)	✅ Layer 7 /health/live	⚠️ netstat PID + ✅ /health HTTP
+web-admin	✅ Layer 7 GET /	⚠️ netstat PID + ❌ /health → 404
+web-portal	✅ Layer 7 GET /	⚠️ netstat PID + ❌ /health → 404
+The boot path (sme-fullboot.ps1) is architecturally sound — every component gets a proper Layer 7 or native readiness proof before the next stage starts. The monitoring path (sme-monitor.js) is where the gap lies: the status signal for 10 of 12 components still relies on either Docker CLI inspection or a netstat text-parse rather than direct native probes.
+
+Claude Sonnet 4.6 • 1x

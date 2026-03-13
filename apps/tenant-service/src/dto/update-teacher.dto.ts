@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class UpdateTeacherDto {
   @ApiPropertyOptional({ example: 'Priya' })
@@ -46,4 +46,15 @@ export class UpdateTeacherDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    example: ['uuid-subject-1', 'uuid-subject-2'],
+    description:
+      'Optional replacement set of Subject IDs. When provided, atomically replaces ALL current subject assignments for this teacher.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  subjectIds?: string[];
 }

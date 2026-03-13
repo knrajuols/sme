@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>DB Inspector</title>
+  <style>
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #181c24; color: #e3e6eb; margin: 0; padding: 0; }
+    .container { max-width: 1200px; margin: 40px auto; background: #232a36; border-radius: 8px; box-shadow: 0 2px 12px #0006; padding: 32px; }
+    h1 { color: #e3b341; margin-bottom: 16px; }
+    .meta { color: #b3b6bb; margin-bottom: 24px; }
+    table { border-collapse: collapse; width: 100%; background: #222; }
+    th, td { border: 1px solid #333; padding: 8px 12px; }
+    th { background: #2a2f3a; color: #e3b341; }
+    td { color: #e3e6eb; }
+    .null-val { color: #888; font-style: italic; }
+    .err { color: #e34c4c; margin: 24px 0; }
+    .empty { color: #b3b6bb; margin: 24px 0; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="title">DB Inspector</h1>
+    <div class="meta" id="meta">Loading...</div>
+    <div id="content">Loading...</div>
+  </div>
+  <script>
+    function escHtml(s) { return String(s).replace(/[&<>"']/g, function(c) { return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;'}[c]); }); }
+    function getParam(name) {
+      var m = location.search.match(new RegExp('[?&]' + name + '=([^&]*)'));
+      return m ? decodeURIComponent(m[1]) : '';
+    }
+    async function loadInspector() {
+      var db = getParam('db');
+      var table = getParam('table');
+      document.getElementById('title').textContent = '\u00bb ' + table + '  \u2014  ' + db + ' db';
+      document.getElementById('meta').textContent = 'SELECT * FROM "' + table + '" LIMIT 100 ...';
+      document.getElementById('content').innerHTML = '<div>Loading...</div>';
+      try {
+        var res = await fetch('/api/db/inspect?db=' + encodeURIComponent(db) + '&table=' + encodeURIComponent(table));
+        var data = await res.json();
+        if (!res.ok || data.error) {
+          document.getElementById('content').innerHTML = '<div class="err">\u26a0 ' + escHtml(data.error || 'Request failed') + '</div>';
+          document.getElementById('meta').textContent = 'Error';
+          return;
+        }
+        var rows = data.rows || [];
+        document.getElementById('meta').textContent = 'SELECT * FROM "' + table + '" LIMIT 100  \u2014  ' + rows.length + ' row(s) returned';
+        if (rows.length === 0) {
+          document.getElementById('content').innerHTML = '<div class="empty">\u2205  Table is empty.</div>';
+          return;
+        }
+        var cols = Object.keys(rows[0]);
+        var html = '<table><thead><tr>';
+        for (var c = 0; c < cols.length; c++) { html += '<th>' + escHtml(cols[c]) + '</th>'; }
+        html += '</tr></thead><tbody>';
+        for (var r = 0; r < rows.length; r++) {
+          html += '<tr>';
+          for (var c2 = 0; c2 < cols.length; c2++) {
+            var val = rows[r][cols[c2]];
+            if (val === null || val === undefined) {
+              html += '<td class="null-val">null</td>';
+            } else if (typeof val === 'object') {
+              html += '<td>' + escHtml(JSON.stringify(val)) + '</td>';
+            } else {
+              var str = String(val);
+              html += '<td title="' + escHtml(str) + '">' + escHtml(str) + '</td>';
+            }
+          }
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+        document.getElementById('content').innerHTML = html;
+      } catch (err) {
+        document.getElementById('content').innerHTML = '<div class="err">\u26a0 ' + escHtml(err.message) + '</div>';
+        document.getElementById('meta').textContent = 'Error';
+      }
+    }
+    window.onload = loadInspector;
+  </script>
+</body>
+</html>

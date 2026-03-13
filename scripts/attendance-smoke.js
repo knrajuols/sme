@@ -51,27 +51,7 @@ async function main() {
     },
     body: JSON.stringify({
       tenantCode,
-      schoolName: `Attendance Smoke ${tenantCode}`,
-      primaryContactName: 'Attendance Admin',
-      primaryContactEmail: adminEmail,
-      primaryContactPhone: '+15550003333',
-      status: 'active',
-    }),
-  });
-
-  const tenantId = createdTenant.data?.tenantId;
-  if (!tenantId) {
-    throw new Error('Tenant creation failed for attendance smoke');
-  }
-
-  await sleep(5000);
-
-  const schoolAdminToken = await requestToken(adminEmail);
-  const headers = {
-    authorization: `Bearer ${schoolAdminToken}`,
-    'content-type': 'application/json',
-    'x-correlation-id': `attendance-smoke-${Date.now()}`,
-  };
+      // ...existing code...
 
   const year = await assertHttp('http://localhost:3002/academic/years', {
     method: 'POST',

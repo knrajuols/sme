@@ -1,6 +1,7 @@
 import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient } from '../generated/prisma-client';
+import { softDeleteMiddleware } from '@sme/common';
 
 @Injectable()
 export class PrismaService
@@ -15,6 +16,8 @@ export class PrismaService
         },
       },
     });
+    // R-06 fix: auto-filter soft-deleted rows on read operations.
+    this.$use(softDeleteMiddleware());
   }
 
   async onModuleInit(): Promise<void> {

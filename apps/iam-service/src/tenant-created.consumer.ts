@@ -26,24 +26,34 @@ export class TenantCreatedConsumer implements OnModuleInit, OnModuleDestroy {
     const rabbitMqUrl =
       this.configService.get<string>('RABBITMQ_URL') ?? 'amqp://localhost:5672';
 
-    this.connection = await connect(rabbitMqUrl);
-    this.channel = await this.connection.createChannel();
+    try {
+      this.connection = await connect(rabbitMqUrl);
+      this.channel = await this.connection.createChannel();
 
-    await this.channel.assertExchange(SME_EVENTS_EXCHANGE, 'topic', {
-      durable: true,
-    });
+      await this.channel.assertExchange(SME_EVENTS_EXCHANGE, 'topic', {
+        durable: true,
+      });
 
-    const queueName = 'iam-service.queue';
-    await this.channel.assertQueue(queueName, { durable: true });
-    await this.channel.bindQueue(
-      queueName,
-      SME_EVENTS_EXCHANGE,
-      TENANT_CREATED_ROUTING_KEY,
-    );
+      const queueName = 'iam-service.queue';
+      await this.channel.assertQueue(queueName, { durable: true });
+      await this.channel.bindQueue(
+        queueName,
+        SME_EVENTS_EXCHANGE,
+        TENANT_CREATED_ROUTING_KEY,
+      );
 
-    await this.channel.consume(queueName, async (message: any) => {
-      await this.processMessage(message);
-    });
+      await this.channel.consume(queueName, async (message: any) => {
+        await this.processMessage(message);
+      });
+    } catch (err) {
+      // Non-fatal in dev — service continues without consuming tenant events.
+      // TODO (Production): make this fatal or implement reconnect logic.
+      console.warn(
+        `[TenantCreatedConsumer] RabbitMQ unavailable — consumer disabled. Reason: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.connection = null;
+      this.channel = null;
+    }
   }
 
   async onModuleDestroy(): Promise<void> {

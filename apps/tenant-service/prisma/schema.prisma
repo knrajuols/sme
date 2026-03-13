@@ -95,6 +95,17 @@ enum Relation {
   OTHER
 }
 
+// Day of week — used by timetable scheduling engine
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
 // Subject type — mandatory field per Task-1; drives timetable weight and marking schemes
 enum SubjectType {
   CORE
@@ -103,6 +114,12 @@ enum SubjectType {
   // AI ADDED: Language and co-curricular are common Indian school subject categories
   LANGUAGE
   CO_CURRICULAR
+}
+
+// Subject visibility status — admins can deactivate regional languages without deleting them
+enum SubjectStatus {
+  ACTIVE
+  INACTIVE
 }
 
 // Attendance record status — enforces valid values at DB level.
@@ -197,6 +214,7 @@ model Tenant {
   studentEnrollments      StudentEnrollment[]
   parents                 Parent[]
   parentStudentMappings   ParentStudentMapping[]
+  teacherSubjects         TeacherSubject[]
   periods                 Period[]
   attendanceSessions      AttendanceSession[]
   attendanceRecords       AttendanceRecord[]
@@ -208,6 +226,13 @@ model Tenant {
   studentExamAggregates   StudentExamAggregate[]
   classExamAggregates     ClassExamAggregate[]
   subjectExamAnalytics    SubjectExamAnalytics[]
+  feeCategories           FeeCategory[]
+  feeStructures           FeeStructure[]
+  feeInvoices             FeeInvoice[]
+  feePayments             FeePayment[]
+  classTimetables         ClassTimetable[]
+  timeTableEntries         TimeTableEntry[]
+  examSchedules           ExamSchedule[]
 }
 
 // key is now sized; FK added — no orphan settings survive tenant deletion.
@@ -264,6 +289,10 @@ model AcademicYear {
   periods            Period[]
   attendanceSessions AttendanceSession[]
   exams              Exam[]
+  feeStructures      FeeStructure[]
+  classTimetables    ClassTimetable[]
+  timeTableEntries   TimeTableEntry[]
+  examSchedules      ExamSchedule[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -290,10 +319,12 @@ model Class {
   sections           Section[]
   assignments        ClassTeacherAssignment[]
   enrollments        StudentEnrollment[]
-  periods            Period[]
   attendanceSessions AttendanceSession[]
   exams              Exam[]
   classAggregates    ClassExamAggregate[]
+  classTimetables    ClassTimetable[]
+  feeStructures      FeeStructure[]
+  timeTableEntries   TimeTableEntry[]
 
   @@unique([tenantId, academicYearId, code])
   @@index([tenantId])
@@ -303,10 +334,11 @@ model Class {
 }
 
 model Section {
-  id       String @id @default(uuid())
-  tenantId String @db.VarChar(50)
-  name     String @db.VarChar(50)
-  classId  String
+  id       String  @id @default(uuid())
+  tenantId String  @db.VarChar(50)
+  name     String  @db.VarChar(50)
+  // Optional: NULL means this section belongs to the global pool (seeded, not yet assigned to a class)
+  classId  String?
 
   // AI ADDED: Maximum student capacity — enforces section strength limits; used in admission workflow
   maxCapacity Int     @default(40)
@@ -326,12 +358,15 @@ model Section {
 
   // FK-enforced tenant isolation — every section belongs to exactly one tenant.
   tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  class              Class                    @relation(fields: [classId], references: [id], onDelete: Restrict)
+  // Optional: sections in the global pool have no class assignment
+  class              Class?                   @relation(fields: [classId], references: [id], onDelete: Restrict)
   assignments        ClassTeacherAssignment[]
   enrollments        StudentEnrollment[]
-  periods            Period[]
   attendanceSessions AttendanceSession[]
+  classTimetables    ClassTimetable[]
+  timeTableEntries   TimeTableEntry[]
 
+  // classId may be NULL (pool sections); PostgreSQL treats NULLs as distinct in unique indexes
   @@unique([tenantId, classId, name])
   @@index([tenantId])
   @@index([classId])
@@ -363,6 +398,9 @@ model Subject {
   // AI ADDED: Is this subject included in GPA / rank calculation?
   countForRank      Boolean @default(true)
 
+  // Admin toggle — INACTIVE hides the subject from active views without destroying data
+  status     SubjectStatus @default(ACTIVE)
+
   createdBy  String?  @db.VarChar(50)
   updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
@@ -375,13 +413,19 @@ model Subject {
   examSubjects     ExamSubject[]
   studentMarks     StudentMark[]
   subjectAnalytics SubjectExamAnalytics[]
+  // M2M: explicit join table preserves tenant isolation in the relationship itself.
+  teacherSubjects  TeacherSubject[]
+  classTimetables  ClassTimetable[]
+  timeTableEntries TimeTableEntry[]
 
   @@unique([tenantId, code])
   @@index([tenantId])
   // Report-generation hot-path: subject by code when classId not in filter scope
   @@index([tenantId, code])
-  // AI ADDED: Subject type filter for core-vs-elective timetable split queries
+  // Subject type filter for core-vs-elective timetable split queries
   @@index([tenantId, type])
+  // Status filter — active/inactive subject list view and admin toggle queries
+  @@index([tenantId, status])
 }
 
 model Teacher {
@@ -442,10 +486,14 @@ model Teacher {
   updatedAt  DateTime @updatedAt
 
   // FK-enforced tenant isolation — every teacher belongs to exactly one tenant.
-  tenant        Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignments   ClassTeacherAssignment[]
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments     ClassTeacherAssignment[]
   // AI ADDED: Sections where this teacher is designated class teacher
-  classSections Section[]
+  classSections   Section[]
+  // M2M: explicit join table preserves tenant isolation in the relationship itself.
+  teacherSubjects TeacherSubject[]
+  classTimetables  ClassTimetable[]
+  timeTableEntries TimeTableEntry[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, employeeCode])
@@ -545,6 +593,8 @@ model Student {
   examResults       StudentExamResult[]
   examAggregates    StudentExamAggregate[]
   parentMappings    ParentStudentMapping[]
+  feeInvoices       FeeInvoice[]
+  feePayments       FeePayment[]
 
   @@unique([tenantId, admissionNumber])
   // AI ADDED: APAAR uniqueness enforced at DB level
@@ -687,16 +737,39 @@ model ParentStudentMapping {
   @@index([studentId])
 }
 
+// ── Teacher-Subject Many-to-Many (explicit join table for tenant isolation) ──
+// Explicit join table is required here instead of Prisma implicit M2M because
+// the implicit join table has NO tenantId column, violating the enterprise tenant
+// isolation mandate. This explicit model enforces a tenant FK on the relationship itself.
+model TeacherSubject {
+  id        String   @id @default(uuid())
+  tenantId  String   @db.VarChar(50)
+  teacherId String
+  subjectId String
+  createdBy String?  @db.VarChar(50)
+  createdAt DateTime @default(now())
+
+  // FK-enforced tenant isolation — every teacher-subject link belongs to exactly one tenant.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  teacher Teacher @relation(fields: [teacherId], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  // One teacher can teach one subject exactly once per tenant.
+  @@unique([tenantId, teacherId, subjectId])
+  @@index([tenantId])
+  @@index([teacherId])
+  @@index([subjectId])
+}
+
 // Timetable slot — unique name per (tenant, academicYear, class, section).
 model Period {
   id             String   @id @default(uuid())
   tenantId       String   @db.VarChar(50)
   name           String   @db.VarChar(50)
-  startTime      DateTime @db.Time(0)
-  endTime        DateTime @db.Time(0)
-  classId        String
-  sectionId      String
-  academicYearId String
+  startTime      String   @db.VarChar(5) // e.g. "09:15" (24-hr HH:MM)
+  endTime        String   @db.VarChar(5) // e.g. "10:00" (24-hr HH:MM)
+  orderIndex     Int      @default(0)    // position in the daily schedule (1-based for seeded rows)
+  academicYearId String?  @db.VarChar(50)
   createdBy      String?  @db.VarChar(50)
   updatedBy      String?  @db.VarChar(50)
   softDelete     Boolean  @default(false)
@@ -704,15 +777,14 @@ model Period {
   updatedAt      DateTime @updatedAt
 
   // FK-enforced tenant isolation — every period belongs to exactly one tenant.
-  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
-  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
-  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear    AcademicYear?   @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  classTimetables  ClassTimetable[]
+  timeTableEntries TimeTableEntry[]
 
-  @@unique([tenantId, academicYearId, classId, sectionId, name])
+  @@unique([tenantId, name])
   @@index([tenantId])
-  // Timetable fetch: all periods for a class-section on a given day
-  @@index([tenantId, classId, sectionId])
+  @@index([tenantId, orderIndex])
 }
 
 model AttendanceSession {
@@ -1011,4 +1083,202 @@ model ProcessedEvent {
   processedAt DateTime @default(now())
 
   @@index([processedAt])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Epic 1 — Finance Engine
+// ─────────────────────────────────────────────────────────────────────────────
+
+model FeeCategory {
+  id          String   @id @default(uuid())
+  tenantId    String   @db.VarChar(50)
+  name        String   @db.VarChar(200)
+  description String?  @db.VarChar(500)
+  createdBy   String?  @db.VarChar(50)
+  updatedBy   String?  @db.VarChar(50)
+  softDelete  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  feeStructures FeeStructure[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model FeeStructure {
+  id             String   @id @default(uuid())
+  tenantId       String   @db.VarChar(50)
+  academicYearId String
+  classId        String
+  feeCategoryId  String
+  amount         Float
+  dueDate        DateTime @db.Date
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  feeCategory  FeeCategory  @relation(fields: [feeCategoryId], references: [id], onDelete: Restrict)
+  invoices     FeeInvoice[]
+
+  @@unique([tenantId, academicYearId, classId, feeCategoryId])
+  @@index([tenantId])
+  @@index([academicYearId])
+  @@index([classId])
+}
+
+model FeeInvoice {
+  id             String   @id @default(uuid())
+  tenantId       String   @db.VarChar(50)
+  studentId      String
+  feeStructureId String
+  amountDue      Float
+  amountPaid     Float    @default(0)
+  // PENDING | PARTIAL | PAID | OVERDUE | WAIVED
+  status         String   @db.VarChar(20)
+  dueDate        DateTime @db.Date
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  feeStructure FeeStructure @relation(fields: [feeStructureId], references: [id], onDelete: Restrict)
+  payments     FeePayment[]
+
+  @@unique([tenantId, studentId, feeStructureId])
+  @@index([tenantId])
+  @@index([studentId])
+  @@index([tenantId, status])
+}
+
+model FeePayment {
+  id              String   @id @default(uuid())
+  tenantId        String   @db.VarChar(50)
+  invoiceId       String
+  studentId       String
+  amount          Float
+  paymentDate     DateTime @db.Date
+  // CASH | ONLINE | CHEQUE | DD | UPI
+  paymentMethod   String   @db.VarChar(30)
+  referenceNumber String?  @db.VarChar(100)
+  remarks         String?  @db.VarChar(500)
+  createdBy       String?  @db.VarChar(50)
+  updatedBy       String?  @db.VarChar(50)
+  softDelete      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  tenant  Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  invoice FeeInvoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  student Student    @relation(fields: [studentId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+  @@index([invoiceId])
+  @@index([studentId])
+  @@index([tenantId, paymentDate])
+}
+
+// ─── Scheduling ────────────────────────────────────────────────────────────
+
+model ClassTimetable {
+  id             String    @id @default(uuid())
+  tenantId       String    @db.VarChar(50)
+  academicYearId String
+  classId        String
+  sectionId      String
+  periodId       String
+  dayOfWeek      DayOfWeek
+  subjectId      String
+  teacherId      String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdBy      String    @db.VarChar(50)
+  updatedBy      String    @db.VarChar(50)
+  softDelete     Boolean   @default(false)
+
+  // Relations
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  period       Period       @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  subject      Subject      @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  teacher      Teacher      @relation(fields: [teacherId], references: [id], onDelete: Restrict)
+
+  // THE CONFLICT ENGINE (Strict Unique Constraints)
+  @@unique([tenantId, academicYearId, classId, sectionId, periodId, dayOfWeek]) // A class can only have one subject at a given time
+  @@unique([tenantId, academicYearId, teacherId, periodId, dayOfWeek]) // A teacher cannot be double-booked
+  @@index([tenantId])
+  @@index([tenantId, academicYearId, classId, sectionId])
+}
+
+// ─── TimeTableEntry ──────────────────────────────────────────────────────────
+// Day-agnostic period assignment: each cell = Class × Section × Period.
+// Used by the 2-D Timetable Builder (no dayOfWeek dimension).
+model TimeTableEntry {
+  id             String   @id @default(uuid())
+  tenantId       String   @db.VarChar(50)
+  academicYearId String   @db.VarChar(50)
+  classId        String   @db.VarChar(50)
+  sectionId      String?  @db.VarChar(50)
+  periodId       String   @db.VarChar(50)
+  subjectId      String?  @db.VarChar(50)
+  teacherId      String?  @db.VarChar(50)
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId],       references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId],        references: [id], onDelete: Cascade)
+  section      Section?     @relation(fields: [sectionId],      references: [id], onDelete: Cascade)
+  period       Period       @relation(fields: [periodId],       references: [id], onDelete: Cascade)
+  subject      Subject?     @relation(fields: [subjectId],      references: [id], onDelete: SetNull)
+  teacher      Teacher?     @relation(fields: [teacherId],      references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, academicYearId, classId, sectionId, periodId])
+  @@index([tenantId])
+  @@index([tenantId, academicYearId])
+  @@index([tenantId, academicYearId, classId, sectionId])
+}
+
+// ─── ExamSchedule ─────────────────────────────────────────────────────────────
+// Master template + tenant exam scheduling.
+// When tenantId = 'MASTER_TEMPLATE' and academicYearId IS NULL, the record is a
+// platform-managed canonical exam template (created via the web-admin portal by
+// super admins).  Schools copy these templates into their own partition when they
+// call POST /exam-schedules/generate-from-master, which writes new rows with the
+// school's tenantId and their chosen academicYearId.
+model ExamSchedule {
+  id             String    @id @default(uuid())
+  tenantId       String    @db.VarChar(50)
+  name           String    @db.VarChar(200)
+  academicYearId String?   @db.VarChar(50)
+  targetClasses  String    @default("ALL") @db.VarChar(200)
+  startDate      DateTime  @db.Date
+  endDate        DateTime  @db.Date
+  softDelete     Boolean   @default(false)
+  createdBy      String?   @db.VarChar(50)
+  updatedBy      String?   @db.VarChar(50)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  // FK-enforced tenant isolation — MASTER_TEMPLATE is a reserved Tenant row.
+  tenant       Tenant        @relation(fields: [tenantId],       references: [id], onDelete: Cascade)
+  academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, name])
+  @@index([tenantId])
+  @@index([tenantId, academicYearId])
 }

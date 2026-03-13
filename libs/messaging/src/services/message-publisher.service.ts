@@ -1,4 +1,4 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { connect } from 'amqplib';
 
@@ -7,31 +7,42 @@ import { EventEnvelope, SME_EVENTS_EXCHANGE } from '@sme/common';
 @Injectable()
 export class MessagePublisherService implements OnModuleInit, OnModuleDestroy {
   private connection: any = null;
-
   private channel: any = null;
+  private readonly logger = new Logger(MessagePublisherService.name);
 
   constructor(private readonly configService: ConfigService) {}
 
   async onModuleInit(): Promise<void> {
     const rabbitMqUrl =
       this.configService.get<string>('RABBITMQ_URL') ?? 'amqp://localhost:5672';
-    this.connection = await connect(rabbitMqUrl);
-    this.channel = await this.connection.createConfirmChannel();
-    await this.channel.assertExchange(SME_EVENTS_EXCHANGE, 'topic', {
-      durable: true,
-    });
+    try {
+      this.connection = await connect(rabbitMqUrl);
+      this.channel = await this.connection.createConfirmChannel();
+      await this.channel.assertExchange(SME_EVENTS_EXCHANGE, 'topic', {
+        durable: true,
+      });
+      this.logger.log('RabbitMQ connected successfully');
+    } catch (err) {
+      // Non-fatal in dev — service continues without messaging.
+      // Events will be lost until RabbitMQ is available and service is restarted.
+      // TODO (Production): make this fatal or implement reconnect logic.
+      this.logger.warn(
+        `RabbitMQ unavailable — messaging disabled. Reason: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.connection = null;
+      this.channel = null;
+    }
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.channel) {
-      await this.channel.close();
-      this.channel = null;
+    try {
+      if (this.channel) await this.channel.close();
+      if (this.connection) await this.connection.close();
+    } catch {
+      // ignore cleanup errors
     }
-
-    if (this.connection) {
-      await this.connection.close();
-      this.connection = null;
-    }
+    this.channel = null;
+    this.connection = null;
   }
 
   async publish<TPayload>(
@@ -39,7 +50,11 @@ export class MessagePublisherService implements OnModuleInit, OnModuleDestroy {
     envelope: EventEnvelope<TPayload>,
   ): Promise<void> {
     if (!this.channel) {
-      throw new Error('RabbitMQ publisher channel is not initialized');
+      // RabbitMQ not connected — log and skip rather than crash the caller.
+      this.logger.warn(
+        `[MESSAGING SKIPPED] RabbitMQ channel not available. Event type="${envelope.eventType}" id="${envelope.eventId}" was NOT delivered.`,
+      );
+      return;
     }
 
     const payload = Buffer.from(JSON.stringify(envelope));

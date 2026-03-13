@@ -6,9 +6,10 @@
   "scripts": {
     "build": "tsc -p tsconfig.app.json",
     "start": "node dist/main.js",
-    "start:dev": "ts-node -r tsconfig-paths/register src/main.ts",
+    "start:dev": "ts-node --transpile-only -r tsconfig-paths/register src/main.ts",
     "prisma:generate": "prisma generate --schema prisma/schema.prisma",
-    "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma"
+    "prisma:migrate:dev": "prisma migrate dev --schema prisma/schema.prisma",
+    "dev": "nest start --watch"
   },
   "dependencies": {
     "@sme/common": "file:../../libs/common",

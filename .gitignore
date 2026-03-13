@@ -1,12 +1,37 @@
+
+
+
+
+# --- Dependencies & Build Outputs ---
 node_modules/
 dist/
+build/
+out/
+bin/
+obj/
 coverage/
-.DS_Store
-*.log
+/.turbo/
+**/.nestjs-cli.json
+
+# --- Database & Prisma (Machine-generated — do not commit) ---
+**/src/generated/prisma-client/
+
+# --- Environment & Secrets ---
+# We ignore actual secrets but keep the example manifest for the hosting server
 .env
 .env.*
 !.env.example
-/.idea/
-/.vscode/
-/.turbo/
-**/.nestjs-cli.json
+
+# --- IDE & Editor folders ---
+.idea/
+.vscode/
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# --- Logs and System Junk ---
+*.log
+.DS_Store
+Thumbs.db

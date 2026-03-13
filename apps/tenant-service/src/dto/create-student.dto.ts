@@ -1,6 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsEnum, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsDate, IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { StudentStatus } from '../enums';
 
 export class CreateStudentDto {
@@ -35,4 +35,14 @@ export class CreateStudentDto {
   @ApiProperty({ example: 'ACTIVE', enum: StudentStatus })
   @IsEnum(StudentStatus)
   status!: StudentStatus;
+
+  @ApiPropertyOptional({
+    example: ['uuid-parent-1'],
+    description: 'Optional parent IDs to atomically link to this student on creation',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  parentIds?: string[];
 }

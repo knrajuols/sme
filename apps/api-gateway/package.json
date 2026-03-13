@@ -9,6 +9,7 @@
     "start:dev": "ts-node -r tsconfig-paths/register src/main.ts"
   },
   "dependencies": {
+    "@nestjs/throttler": "^6.5.0",
     "@sme/auth": "file:../../libs/auth",
     "@sme/common": "file:../../libs/common",
     "@sme/config-client": "file:../../libs/config-client",

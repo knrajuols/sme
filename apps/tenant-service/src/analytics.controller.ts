@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query } from '@nestjs/common';
+import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import {
@@ -6,11 +6,15 @@ import {
   Permissions,
 } from '@sme/auth';
 
+import { Roles } from './auth/roles.decorator';
+import { RolesGuard } from './auth/roles.guard';
 import { AnalyticsCorrelationQueryDto } from './dto/analytics-correlation-query.dto';
 import { AnalyticsService } from './analytics.service';
 
 @ApiTags('Analytics')
 @Controller('analytics')
+@UseGuards(RolesGuard)
+@Roles('SCHOOL_ADMIN', 'TEACHER')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 

@@ -1,0 +1,43 @@
+﻿function Start-SmeBackground { param([string]$NpmScript, [string]$Title, [string]$LogName = '')
+    $appName = if ($LogName) { $LogName } else { $NpmScript }
+
+    # Service directory + npm script mapping (mirrors ecosystem.config.js)
+    # PM2 v6 incompatible with Node.js v24 (EPERM on named pipe) - use direct Start-Process
+    $svcMap = @{
+        'api-gateway'    = @{ Dir = 'apps\api-gateway';    Script = 'start:dev' }
+        'iam-service'    = @{ Dir = 'apps\iam-service';    Script = 'start:dev' }
+        'tenant-service' = @{ Dir = 'apps\tenant-service'; Script = 'start:dev' }
+        'config-service' = @{ Dir = 'apps\config-service'; Script = 'start:dev' }
+        'audit-service'  = @{ Dir = 'apps\audit-service';  Script = 'start:dev' }
+        'portal-service' = @{ Dir = 'apps\portal-service'; Script = 'start:dev' }
+        'web-admin'      = @{ Dir = 'apps\web-admin';      Script = 'dev' }
+        'web-portal'     = @{ Dir = 'apps\web-portal';     Script = 'dev' }
+    }
+
+    $entry = $svcMap[$appName]
+    if (-not $entry) {
+        Write-Warn "  [Launch]  No service map entry for '$appName' - skipping"
+        return
+    }
+
+    $svcDir = Join-Path $ROOT $entry.Dir
+    $outLog = Join-Path $ROOT "logs\pm2\$appName.out.log"
+    $errLog = Join-Path $ROOT "logs\pm2\$appName.err.log"
+
+    Set-Content -Path $outLog -Value '' -Encoding UTF8 -ErrorAction SilentlyContinue
+    Set-Content -Path $errLog -Value '' -Encoding UTF8 -ErrorAction SilentlyContinue
+
+    $proc = Start-Process -FilePath 'cmd.exe' `
+        -ArgumentList "/c npm run $($entry.Script)" `
+        -WorkingDirectory $svcDir `
+        -RedirectStandardOutput $outLog `
+        -RedirectStandardError  $errLog `
+        -NoNewWindow `
+        -PassThru
+
+    if ($proc -and $proc.Id) {
+        Write-Info "  [Launch]  $appName  PID=$($proc.Id)  log: logs\pm2\$appName.out.log"
+    } else {
+        Write-Warn "  [Launch]  $appName: Start-Process returned no PID"
+    }
+}

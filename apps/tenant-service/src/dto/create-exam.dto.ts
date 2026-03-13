@@ -1,6 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsDate, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+
+import { ExamStatus } from '../enums';
 
 export class CreateExamDto {
   @ApiProperty({ example: 'Mid Term' })
@@ -30,4 +32,9 @@ export class CreateExamDto {
   @ApiPropertyOptional({ example: 200 })
   @IsOptional()
   totalMarks?: number;
+
+  @ApiPropertyOptional({ example: 'DRAFT', enum: ExamStatus })
+  @IsOptional()
+  @IsEnum(ExamStatus)
+  status?: ExamStatus;
 }

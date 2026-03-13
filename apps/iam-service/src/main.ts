@@ -40,4 +40,7 @@ async function bootstrap(): Promise<void> {
   await app.listen(Number(process.env.PORT ?? 3001));
 }
 
-void bootstrap();
+bootstrap().catch((err: unknown) => {
+  console.error('[IAM] Fatal startup error:', err);
+  process.exit(1);
+});

@@ -1,0 +1,1 @@
+import { redirect } from 'next/navigation';/** * /smeadmin — Platform Admin entry point. * Redirects directly to the login page (served from this same app, port 3102). * No cross-port redirect needed. */export default function SmeAdminRootPage() {  redirect('/smeadmin/login');}

@@ -7,6 +7,7 @@ import {
   Patch,
   Post,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { randomUUID } from 'crypto';
@@ -18,6 +19,8 @@ import {
 } from '@sme/auth';
 import type { JwtClaims } from '@sme/auth';
 
+import { Roles } from './auth/roles.decorator';
+import { RolesGuard } from './auth/roles.guard';
 import { AttendanceService } from './attendance.service';
 import { AttendanceSessionQueryDto } from './dto/attendance-session-query.dto';
 import { AttendanceSummaryQueryDto } from './dto/attendance-summary-query.dto';
@@ -26,6 +29,8 @@ import { CreateAttendanceSessionDto } from './dto/create-attendance-session.dto'
 
 @ApiTags('Attendance')
 @Controller('attendance')
+@UseGuards(RolesGuard)
+@Roles('SCHOOL_ADMIN', 'TEACHER')
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 

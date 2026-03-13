@@ -1,6 +1,6 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+﻿import { ForbiddenException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 
 import type { JwtClaims } from '@sme/auth';
 import {
@@ -21,6 +21,36 @@ interface ReadinessDetail {
 interface ReadinessResult {
   ok: boolean;
   details: Record<string, ReadinessDetail>;
+}
+
+interface AuditEventRow {
+  id: string;
+  tenantId: string;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  moduleKey: string | null;
+  correlationId: string | null;
+  actorType: string | null;
+  actorId: string | null;
+  sourceService: string | null;
+  beforeSnapshot: unknown | null;
+  afterSnapshot: unknown | null;
+  rowHash: string | null;
+  createdAt: Date;
+}
+
+/** Compute a deterministic row hash for tamper-evidence (RISK-04 fix). */
+function computeRowHash(params: {
+  tenantId: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  actorId: string | null | undefined;
+  occurredAt: string;
+}): string {
+  const raw = `${params.tenantId}|${params.action}|${params.entityType}|${params.entityId}|${params.actorId ?? ''}|${params.occurredAt}`;
+  return createHash('sha256').update(raw).digest('hex');
 }
 
 @Injectable()
@@ -72,81 +102,130 @@ export class AppService {
     return { ok, details };
   }
 
+  // â”€â”€â”€ Direct REST write (requires AUDIT_VIEW permission) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
   async create(dto: CreateAuditEventDto): Promise<{ persisted: boolean; event: CreateAuditEventDto }> {
+    const now = new Date();
+    const rowHash = computeRowHash({
+      tenantId: dto.tenantId,
+      action: dto.action,
+      entityType: dto.entityType,
+      entityId: dto.entityId,
+      actorId: dto.actorId,
+      occurredAt: now.toISOString(),
+    });
+
+    // RISK-04 fix: tenantId non-nullable; all structured columns populated.
     await this.prisma.$executeRaw`
-      INSERT INTO "AuditEvent" ("id", "action", "actor", "payload", "createdAt")
-      VALUES (${randomUUID()}, ${dto.action}, ${dto.actor}, ${JSON.stringify(dto.payload)}::jsonb, ${new Date()})
+      INSERT INTO "AuditEvent" (
+        "id", "tenantId", "correlationId",
+        "actorType", "actorId", "actorRole",
+        "moduleKey", "entityType", "entityId",
+        "action", "beforeSnapshot", "afterSnapshot",
+        "reason", "sourceService", "ipAddress", "userAgent",
+        "rowHash", "createdAt"
+      ) VALUES (
+        ${randomUUID()},
+        ${dto.tenantId},
+        ${dto.correlationId},
+        ${dto.actorType}::"AuditActorType",
+        ${dto.actorId ?? null},
+        ${dto.actorRole ?? null},
+        ${dto.moduleKey},
+        ${dto.entityType},
+        ${dto.entityId},
+        ${dto.action},
+        ${dto.beforeSnapshot ? JSON.stringify(dto.beforeSnapshot) : null}::jsonb,
+        ${dto.afterSnapshot  ? JSON.stringify(dto.afterSnapshot)  : null}::jsonb,
+        ${dto.reason ?? null},
+        ${dto.sourceService ?? 'direct'},
+        ${dto.ipAddress ?? null},
+        ${dto.userAgent ?? null},
+        ${rowHash},
+        ${now}
+      )
     `;
 
-    return {
-      persisted: true,
-      event: dto,
-    };
+    return { persisted: true, event: dto };
   }
+
+  // â”€â”€â”€ Message consumer handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async handleAuditEventRequested(
     envelope: EventEnvelope<AuditEventRequestedPayload>,
   ): Promise<void> {
-    const payload = {
-      summary: envelope.payload.summary,
-      metadata: envelope.payload.metadata ?? {},
-      producer: envelope.producer,
-      occurredAt: envelope.occurredAt,
-    };
+    const p   = envelope.payload;
+    const now = new Date();
 
+    const rowHash = computeRowHash({
+      tenantId:   envelope.tenantId,
+      action:     p.action,
+      entityType: p.entity,
+      entityId:   p.entityId,
+      actorId:    envelope.actor?.actorId,
+      occurredAt: envelope.occurredAt,
+    });
+
+    // RISK-04 fix: structured columns + non-nullable tenantId.
     await this.prisma.$executeRaw`
       INSERT INTO "AuditEvent" (
-        "id",
-        "eventType",
-        "correlationId",
-        "action",
-        "actor",
-        "actorType",
-        "actorId",
-        "actorRole",
-        "entity",
-        "entityId",
-        "tenantId",
-        "tenantCode",
-        "payload",
-        "createdAt"
+        "id", "tenantId", "correlationId",
+        "actorType", "actorId", "actorRole",
+        "moduleKey", "entityType", "entityId",
+        "action", "beforeSnapshot", "afterSnapshot",
+        "reason", "sourceService", "ipAddress", "userAgent",
+        "rowHash", "createdAt"
       ) VALUES (
         ${randomUUID()},
-        ${envelope.eventType},
-        ${envelope.correlationId},
-        ${envelope.payload.action},
-        ${envelope.actor.actorId},
-        ${envelope.actor.actorType},
-        ${envelope.actor.actorId},
-        ${envelope.actor.role},
-        ${envelope.payload.entity},
-        ${envelope.payload.entityId},
         ${envelope.tenantId},
-        ${typeof envelope.payload.metadata?.tenantCode === 'string' ? envelope.payload.metadata.tenantCode : null},
-        ${JSON.stringify(payload)}::jsonb,
-        ${new Date()}
+        ${envelope.correlationId ?? randomUUID()},
+        ${envelope.actor?.actorType ?? 'SYSTEM'}::"AuditActorType",
+        ${envelope.actor?.actorId ?? null},
+        ${envelope.actor?.role ?? null},
+        ${p.module ?? 'system'},
+        ${p.entity},
+        ${p.entityId},
+        ${p.action},
+        ${p.before != null ? JSON.stringify(p.before) : null}::jsonb,
+        ${p.after  != null ? JSON.stringify(p.after)  : null}::jsonb,
+        ${p.summary ?? null},
+        ${envelope.producer?.service ?? 'unknown'},
+        {((p as unknown) as Record<string, unknown>)['ipAddress'] as string ?? null},
+        {((p as unknown) as Record<string, unknown>)['userAgent'] as string ?? null},
+        ${rowHash},
+        ${now}
       )
     `;
   }
 
+  // â”€â”€â”€ Query: list by tenant â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
   async findByTenantId(
     tenantId: string,
     user: JwtClaims,
-  ): Promise<Array<{ id: string; action: string; entity: string | null; correlationId: string | null; createdAt: Date }>> {
+    limit = 100,
+    offset = 0,
+  ): Promise<AuditEventRow[]> {
     if (!user.roles.includes('PLATFORM_ADMIN') && user.tenantId !== tenantId) {
       throw new ForbiddenException({
-        message: 'Cross-tenant access is forbidden',
+        type: 'https://sme.example.com/errors/forbidden',
+        title: 'Forbidden',
+        status: 403,
+        detail: 'Cross-tenant access is forbidden',
         code: 'TENANT_SCOPE_VIOLATION',
       });
     }
 
-    const rows = await this.prisma.$queryRaw<Array<{ id: string; action: string; entity: string | null; correlationId: string | null; createdAt: Date }>>`
-      SELECT "id", "action", "entity", "correlationId", "createdAt"
+    return this.prisma.$queryRaw<AuditEventRow[]>`
+      SELECT
+        "id", "tenantId", "action", "entityType", "entityId",
+        "moduleKey", "correlationId", "actorType", "actorId",
+        "sourceService", "beforeSnapshot", "afterSnapshot", "rowHash",
+        "createdAt"
       FROM "AuditEvent"
       WHERE "tenantId" = ${tenantId}
-      ORDER BY "createdAt" ASC
+      ORDER BY "createdAt" DESC
+      LIMIT ${limit} OFFSET ${offset}
     `;
-
-    return rows;
   }
 }

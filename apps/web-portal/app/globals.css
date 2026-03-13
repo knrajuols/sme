@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-50 text-slate-900;
+}
+
+@layer components {
+  /**
+   * Grand Table System
+   * Add `grand-table` to any <table> element to get:
+   * - Zebra striping on even rows (slate-50/30 — barely visible until you look closely)
+   * - Soft teal hover glow on rows
+   * Designed to override Tailwind row-level hover utilities via specificity.
+   */
+  .grand-table > tbody > tr:nth-child(even) {
+    background-color: rgba(248, 250, 252, 0.3);
+  }
+  .grand-table > tbody > tr:hover {
+    background-color: rgba(240, 253, 250, 0.6);
+    transition-property: background-color;
+    transition-duration: 200ms;
+  }
+
+  /* Crystal Executive page title */
+  .page-title {
+    @apply text-2xl font-bold text-slate-900 tracking-tight mb-6;
+  }
+}

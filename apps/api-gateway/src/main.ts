@@ -18,6 +18,32 @@ loadEnv({ path: envPath, override: true });
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
 
+  // ── CORS ──────────────────────────────────────────────────────────────────
+  // Static origins from env (comma-separated)
+  const staticOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:3101,http://localhost:3102')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
+
+  // Dynamic origin matcher — allows any subdomain of the configured base domain
+  // e.g. http://greenvalley.sme.test:3102, http://school2.sme.test:3102
+  // TODO (Production Migration): update BASE_DOMAIN to your real domain
+  const baseDomain = (process.env.BASE_DOMAIN ?? 'sme.test').replace('.', '\\.');
+  const subdomainPattern = new RegExp(`^https?://[a-z0-9-]+\\.${baseDomain}(:\\d+)?$`);
+
+  app.enableCors({
+    origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Allow requests with no origin (server-to-server, curl, Swagger)
+      if (!origin) return callback(null, true);
+      if (staticOrigins.includes(origin) || subdomainPattern.test(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`CORS: origin '${origin}' not allowed`));
+    },
+    credentials: true,
+  });
+
+
   app.useLogger(app.get(Logger));
   app.useGlobalPipes(
     new ValidationPipe({

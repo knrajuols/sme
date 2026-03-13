@@ -36,3 +36,19 @@ export enum ExamStatus {
   COMPLETED = 'COMPLETED',
   CANCELLED = 'CANCELLED',
 }
+
+export enum Gender {
+  MALE = 'MALE',
+  FEMALE = 'FEMALE',
+  OTHER = 'OTHER',
+  PREFER_NOT_TO_SAY = 'PREFER_NOT_TO_SAY',
+}
+
+export enum Relation {
+  FATHER = 'FATHER',
+  MOTHER = 'MOTHER',
+  GUARDIAN = 'GUARDIAN',
+  GRANDPARENT = 'GRANDPARENT',
+  SIBLING = 'SIBLING',
+  OTHER = 'OTHER',
+}

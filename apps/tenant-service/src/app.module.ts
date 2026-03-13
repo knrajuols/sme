@@ -9,6 +9,8 @@ import { MessagingModule } from '@sme/messaging';
 import { AcademicController } from './academic.controller';
 import { AcademicService } from './academic.service';
 import { AnalyticsController } from './analytics.controller';
+import { DashboardController } from './dashboard.controller';
+import { DashboardService } from './dashboard.service';
 import { AnalyticsService } from './analytics.service';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -16,8 +18,16 @@ import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { ExamController } from './exam.controller';
 import { ExamService } from './exam.service';
+import { ExamScheduleController } from './exam-schedule.controller';
 import { HealthController } from './health.controller';
 import { PlatformController } from './platform.controller';
+import { FinanceController } from './finance.controller';
+import { FinanceService } from './finance.service';
+import { PortalController } from './portal.controller';
+import { PortalService } from './portal.service';
+import { TimetableController } from './timetable.controller';
+import { TimetableService } from './timetable.service';
+import { WebAdminController } from './web-admin.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { RabbitMqSetupService } from './rabbitmq-setup.service';
 
@@ -46,6 +56,12 @@ const appRoot = dirname(process.env.npm_package_json ?? join(process.cwd(), 'pac
     AttendanceController,
     ExamController,
     AnalyticsController,
+    DashboardController,
+    PortalController,
+    FinanceController,
+    TimetableController,
+    WebAdminController,
+    ExamScheduleController,
   ],
   providers: [
     AppService,
@@ -54,6 +70,10 @@ const appRoot = dirname(process.env.npm_package_json ?? join(process.cwd(), 'pac
     AttendanceService,
     ExamService,
     AnalyticsService,
+    DashboardService,
+    PortalService,
+    FinanceService,
+    TimetableService,
   ],
 })
 export class AppModule {}

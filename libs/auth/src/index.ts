@@ -5,6 +5,7 @@ export * from './decorators/current-tenant.decorator';
 export * from './decorators/permissions.decorator';
 export * from './guards/api-key.guard';
 export * from './guards/jwt-auth.guard';
+export * from './guards/module.guard';
 export * from './guards/permission.guard';
 export * from './guards/tenant-scope.guard';
 export * from './interfaces/jwt-claims.interface';

@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 
 import { CurrentUser, Permissions, Public } from '@sme/auth';
 import type { JwtClaims } from '@sme/auth';
@@ -20,25 +20,30 @@ export class AppController {
   }
 
   @Get('/internal/health')
-  @ApiOperation({ summary: 'Audit internal health endpoint (requires internal secret + JWT)' })
+  @ApiOperation({ summary: 'Audit internal health endpoint (requires JWT)' })
   internalHealth(): { service: string; status: string } {
     return this.appService.live();
   }
 
   @Post('events')
-  @ApiOperation({ summary: 'Create audit event' })
+  @ApiOperation({ summary: 'Create audit event directly via REST' })
   @Permissions('AUDIT_VIEW')
   async create(@Body() dto: CreateAuditEventDto): Promise<{ persisted: boolean; event: CreateAuditEventDto }> {
     return this.appService.create(dto);
   }
 
   @Get('tenant/:tenantId')
-  @ApiOperation({ summary: 'List audit events by tenant ID' })
+  @ApiOperation({ summary: 'List audit events for a tenant (descending by time)' })
+  @ApiQuery({ name: 'limit',  required: false, type: Number })
+  @ApiQuery({ name: 'offset', required: false, type: Number })
   @Permissions('AUDIT_VIEW')
   async findByTenantId(
     @Param('tenantId') tenantId: string,
     @CurrentUser() user: JwtClaims,
-  ): Promise<Array<{ id: string; action: string; entity: string | null; correlationId: string | null; createdAt: Date }>> {
-    return this.appService.findByTenantId(tenantId, user);
+    @Query('limit')  limit  = 100,
+    @Query('offset') offset = 0,
+  ) {
+    return this.appService.findByTenantId(tenantId, user, Number(limit), Number(offset));
   }
 }
+

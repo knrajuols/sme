@@ -1,0 +1,27 @@
+/docs
+  /baseline
+    SME_CONTEXT_BASELINE_v1.md
+  /adr
+    ADR-000-adr-process.md
+    ADR-001-microservice-architecture.md
+    ADR-002-strict-tenant-isolation.md
+    ADR-003-separate-ui-applications.md
+    ADR-004-event-driven-onboarding.md
+  /analysis
+    BRD_v1.md
+    SRS_v1.md
+  /design
+    HLD_v1.md
+    LLD-01-infra.md
+    LLD-02-iam.md
+    LLD-03-tenant-core.md
+    LLD-04-attendance.md
+    LLD-05-exam-analytics.md
+  /prompts
+    prompt-academic-core.md
+    prompt-attendance-engine.md
+    prompt-exam-engine.md
+    prompt-analytics-engine.md
+    prompt-portal-layer.md
+    prompt-ui-layer.md
+    prompt-dev-hardening.md

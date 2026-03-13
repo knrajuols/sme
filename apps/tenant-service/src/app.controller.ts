@@ -20,6 +20,7 @@ export class AppController {
     return this.appService.health();
   }
 
+  @Public()
   @Get('/internal/health')
   @ApiOperation({ summary: 'Tenant internal health endpoint (requires internal secret + JWT)' })
   internalHealth(): { service: string; status: string } {

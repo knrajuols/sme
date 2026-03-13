@@ -12,6 +12,8 @@ import { JwtAuthGuard, PermissionGuard, Permissions } from '@sme/auth';
 import type { JwtClaims } from '@sme/auth';
 import type { Request } from 'express';
 
+import { Roles } from './auth/roles.decorator';
+import { RolesGuard } from './auth/roles.guard';
 import { AddExamSubjectDto } from './dto/add-exam-subject.dto';
 import { CreateExamDto } from './dto/create-exam.dto';
 import { EnterStudentMarksDto } from './dto/enter-student-marks.dto';
@@ -23,7 +25,8 @@ interface RequestWithContext extends Request {
 }
 
 @Controller()
-@UseGuards(JwtAuthGuard, PermissionGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard, RolesGuard)
+@Roles('SCHOOL_ADMIN', 'TEACHER')
 export class ExamController {
   constructor(private readonly examService: ExamService) {}
 
@@ -91,6 +94,7 @@ export class ExamController {
 
   @Get('students/:studentId/results')
   @Permissions('RESULT_VIEW')
+  @Roles('SCHOOL_ADMIN', 'TEACHER', 'PARENT', 'STUDENT')
   getStudentResults(@Param('studentId') studentId: string, @Req() req: RequestWithContext) {
     return this.examService.getStudentResults(studentId, req.tenantId);
   }

@@ -1,0 +1,1 @@
+powershell -Command "Start-Process powershell -ArgumentList '-ExecutionPolicy Bypass -NoExit -Command cd C:\projects\SME; npm run smeapplocal' -Verb RunAs"

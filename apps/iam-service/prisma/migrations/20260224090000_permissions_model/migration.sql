@@ -5,6 +5,7 @@ CREATE TABLE "Permission" (
     "name" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
+    "moduleKey" VARCHAR(50) NOT NULL,
 
     CONSTRAINT "Permission_pkey" PRIMARY KEY ("id")
 );
@@ -15,6 +16,7 @@ CREATE TABLE "RolePermission" (
     "roleId" TEXT NOT NULL,
     "permissionId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "tenantId" VARCHAR(50) NOT NULL,
 
     CONSTRAINT "RolePermission_pkey" PRIMARY KEY ("id")
 );

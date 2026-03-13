@@ -1,6 +1,9 @@
 export const SME_EVENTS_EXCHANGE = 'sme.events';
 export const TENANT_CREATED_ROUTING_KEY = 'tenant.TenantCreated';
+export const TENANT_STATUS_CHANGED_ROUTING_KEY = 'tenant.TenantStatusChanged';
 export const AUDIT_EVENT_REQUESTED_ROUTING_KEY = 'audit.AuditEventRequested';
+export const MODULE_ENABLED_ROUTING_KEY = 'config.ModuleEnabled';
+export const MODULE_DISABLED_ROUTING_KEY = 'config.ModuleDisabled';
 
 export interface EventActor {
   actorType: string;
@@ -31,8 +34,17 @@ export interface TenantCreatedPayload {
   status: string;
   primaryContactName: string;
   primaryContactEmail: string;
-  primaryContactPhone: string;
+  primaryContactPhone?: string;  // optional — phone may be collected in progressive profiling step
   planId?: string;
+}
+
+export interface TenantStatusChangedPayload {
+  tenantId: string;
+  tenantCode: string;
+  oldStatus: string;
+  newStatus: string;
+  changedBy: string;
+  reason?: string;
 }
 
 export interface AuditEventRequestedPayload {
@@ -40,5 +52,18 @@ export interface AuditEventRequestedPayload {
   entity: string;
   entityId: string;
   summary: string;
+  module?: string;
+  before?: Record<string, unknown>;
+  after?: Record<string, unknown>;
+  ipAddress?: string;
+  userAgent?: string;
   metadata?: Record<string, unknown>;
+}
+
+export interface ModuleTogglePayload {
+  moduleKey: string;
+  tenantId: string;
+  enabled: boolean;
+  changedBy: string;
+  reason?: string;
 }

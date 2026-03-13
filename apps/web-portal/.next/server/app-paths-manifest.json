@@ -1,0 +1,10 @@
+{
+  "/login/page": "app/login/page.js",
+  "/api/exam-schedules/route": "app/api/exam-schedules/route.js",
+  "/api/exam-schedules/generate-from-master/route": "app/api/exam-schedules/generate-from-master/route.js",
+  "/api/academic/years/route": "app/api/academic/years/route.js",
+  "/admin/dashboard/page": "app/admin/dashboard/page.js",
+  "/admin/attendance/page": "app/admin/attendance/page.js",
+  "/admin/examinations/page": "app/admin/examinations/page.js",
+  "/admin/exams/page": "app/admin/exams/page.js"
+}

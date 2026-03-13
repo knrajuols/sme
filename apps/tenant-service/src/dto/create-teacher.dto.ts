@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateTeacherDto {
   @ApiProperty({ example: 'Priya' })
@@ -8,11 +8,12 @@ export class CreateTeacherDto {
   @MaxLength(100)
   firstName!: string;
 
-  @ApiProperty({ example: 'Sharma' })
+  @ApiPropertyOptional({ example: 'Sharma' })
+  @IsOptional()
   @IsString()
   @MinLength(2)
   @MaxLength(100)
-  lastName!: string;
+  lastName?: string;
 
   @ApiProperty({ example: 'priya.sharma@school.edu' })
   @IsEmail()
@@ -46,4 +47,14 @@ export class CreateTeacherDto {
   @IsOptional()
   @IsString()
   userId?: string;
+
+  @ApiPropertyOptional({
+    example: ['uuid-subject-1', 'uuid-subject-2'],
+    description: 'Optional array of Subject IDs to atomically assign to this teacher on creation',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  subjectIds?: string[];
 }
