@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AuthGuard } from '../../../components/AuthGuard';
 import { bffFetch } from '../../../lib/api';
 import type { UserClaims } from '../../../lib/auth';
+import { DateInput } from '../../../components/ui/DateInput';
 import { PremiumCard } from '../../../components/ui/PremiumCard';
 import { StatusPill } from '../../../components/ui/StatusPill';
 
@@ -223,9 +224,11 @@ function ExamPanel({
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">
               Start Date <span className="text-red-500">*</span>
             </label>
-            <input type="date" className={inputCls(errors.startDate)}
+            <DateInput
               value={isEdit ? updateForm.startDate : createForm.startDate}
-              onChange={(e) => isEdit ? setUpdateForm((p) => ({ ...p, startDate: e.target.value })) : setCreate('startDate', e.target.value)} />
+              onValueChange={(v) => isEdit ? setUpdateForm((p) => ({ ...p, startDate: v })) : setCreate('startDate', v)}
+              className={inputCls(errors.startDate)}
+            />
             {errors.startDate && <p className="mt-1 text-xs text-red-600">{errors.startDate}</p>}
           </div>
 
@@ -234,9 +237,11 @@ function ExamPanel({
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">
               End Date <span className="text-red-500">*</span>
             </label>
-            <input type="date" className={inputCls(errors.endDate)}
+            <DateInput
               value={isEdit ? updateForm.endDate : createForm.endDate}
-              onChange={(e) => isEdit ? setUpdateForm((p) => ({ ...p, endDate: e.target.value })) : setCreate('endDate', e.target.value)} />
+              onValueChange={(v) => isEdit ? setUpdateForm((p) => ({ ...p, endDate: v })) : setCreate('endDate', v)}
+              className={inputCls(errors.endDate)}
+            />
             {errors.endDate && <p className="mt-1 text-xs text-red-600">{errors.endDate}</p>}
           </div>
 

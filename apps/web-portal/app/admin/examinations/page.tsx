@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { AuthGuard } from '../../../components/AuthGuard';
 import { bffFetch } from '../../../lib/api';
+import { DateInput } from '../../../components/ui/DateInput';
 
 // ── Domain types ───────────────────────────────────────────────────────────
 interface AcademicYear { id: string; name: string; isActive: boolean; }
@@ -169,16 +170,22 @@ function ExamPanel({
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 Start Date <span className="text-red-500">*</span>
               </label>
-              <input type="date" className={inputCls(errors.startDate)}
-                value={form.startDate} onChange={(e) => setField('startDate', e.target.value)} />
+              <DateInput
+                value={form.startDate}
+                onValueChange={(v) => setField('startDate', v)}
+                className={inputCls(errors.startDate)}
+              />
               {errors.startDate && <p className="mt-1 text-xs text-red-600">{errors.startDate}</p>}
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 End Date <span className="text-red-500">*</span>
               </label>
-              <input type="date" className={inputCls(errors.endDate)}
-                value={form.endDate} onChange={(e) => setField('endDate', e.target.value)} />
+              <DateInput
+                value={form.endDate}
+                onValueChange={(v) => setField('endDate', v)}
+                className={inputCls(errors.endDate)}
+              />
               {errors.endDate && <p className="mt-1 text-xs text-red-600">{errors.endDate}</p>}
             </div>
           </div>

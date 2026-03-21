@@ -44,8 +44,26 @@ const PLATFORM_GROUPS: NavGroup[] = [
   {
     label: 'Master Data',
     links: [
-      { href: '/master-data/periods', label: 'Periods'         },
-      { href: '/exams',               label: 'Exam Schedules'  },
+      { href: '/master-data/academic-years',    label: 'Academic Years'   },
+      { href: '/master-data/classes',           label: 'Classes'          },
+      { href: '/master-data/sections',          label: 'Sections'         },
+      { href: '/master-data/subjects',          label: 'Subjects'         },
+      { href: '/master-data/periods',           label: 'Periods'          },
+      { href: '/master-data/grading-system',    label: 'Grading System'   },
+      { href: '/exams',                         label: 'Exam Schedules'   },
+      { href: '/master-data/fee-categories',    label: 'Fee Categories'   },
+      { href: '/master-data/fee-structures',    label: 'Fee Structures'   },
+      { href: '/master-data/academic-calendar', label: 'Academic Calendar'},
+      { href: '/master-data/holidays',          label: 'Holiday Management'},
+    ],
+  },
+  {
+    label: 'Transport',
+    links: [
+      { href: '/transport/staff',       label: 'Transport Staff'       },
+      { href: '/transport/vehicles',    label: 'Fleet Management'      },
+      { href: '/transport/routes',      label: 'Routes & Stops'        },
+      { href: '/transport/allocations', label: 'Student Allocations'   },
     ],
   },
 ];

@@ -167,19 +167,23 @@ export class TimetableService {
         select: { id: true, name: true, startTime: true, endTime: true, orderIndex: true },
         orderBy: { orderIndex: 'asc' },
       }),
+      // Issue-246: Use ClassSection junction table (not the legacy Section.classId FK)
+      // so the grid rows reflect actual section assignments per class.
       this.prisma.class.findMany({
         where: { tenantId, academicYearId, softDelete: false },
         select: {
           id: true,
           name: true,
           code: true,
-          sections: {
+          classSections: {
             where: { softDelete: false },
-            select: { id: true, name: true },
+            select: {
+              sectionId: true,
+              section: { select: { id: true, name: true } },
+            },
             orderBy: { name: 'asc' },
           },
         },
-        // Initial DB fetch ordered by code; natural numeric re-sort applied below
         orderBy: { code: 'asc' },
       }).then(rows => {
         const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
@@ -197,10 +201,15 @@ export class TimetableService {
         },
       }),
     ]);
-    // Ensure sections are always an array (defensive normalisation)
+    // Issue-246: Map classSections → sections for UI compatibility
     const normalisedClasses = classes.map(c => ({
-      ...c,
-      sections: c.sections ?? [],
+      id: c.id,
+      name: c.name,
+      code: c.code,
+      sections: (c.classSections ?? []).map(cs => ({
+        id: cs.section.id,
+        name: cs.section.name,
+      })),
     }));
     return { periods, classes: normalisedClasses, entries };
   }

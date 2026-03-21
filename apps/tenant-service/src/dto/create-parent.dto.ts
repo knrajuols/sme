@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 
 import { Gender, Relation } from '../enums';
 
@@ -10,15 +10,18 @@ export class CreateParentDto {
   @MaxLength(100)
   firstName!: string;
 
-  @ApiProperty({ example: 'Sharma' })
+  // Issue-222: lastName is culturally optional
+  @ApiPropertyOptional({ example: 'Sharma' })
+  @IsOptional()
   @IsString()
-  @MinLength(2)
   @MaxLength(100)
-  lastName!: string;
+  lastName?: string;
 
-  @ApiProperty({ example: 'FATHER', enum: Relation })
+  // Issue-230: Relation is optional; defaults to GUARDIAN on the backend if not provided
+  @ApiPropertyOptional({ example: 'FATHER', enum: Relation })
+  @IsOptional()
   @IsEnum(Relation)
-  relation!: Relation;
+  relation?: Relation;
 
   @ApiProperty({ example: 'MALE', enum: Gender })
   @IsEnum(Gender)
@@ -29,11 +32,12 @@ export class CreateParentDto {
   @MaxLength(50)
   userId!: string;
 
-  @ApiPropertyOptional({ example: '+91-9876543210' })
-  @IsOptional()
+  // Issue-230: Phone is mandatory — primary contact channel for school communications
+  @ApiProperty({ example: '+91-9876543210' })
+  @IsNotEmpty({ message: 'Phone number is required' })
   @IsString()
   @MaxLength(20)
-  phone?: string;
+  phone!: string;
 
   @ApiPropertyOptional({ example: '+91-9876543211' })
   @IsOptional()
@@ -47,17 +51,43 @@ export class CreateParentDto {
   @MaxLength(255)
   email?: string;
 
-  @ApiPropertyOptional({ example: 'Hindi' })
-  @IsOptional()
+  // Issue-230: MotherTongue is mandatory — required for language-based communication preferences
+  @ApiProperty({ example: 'Hindi' })
+  @IsNotEmpty({ message: 'Mother tongue is required' })
   @IsString()
   @MaxLength(50)
-  motherTongue?: string;
+  motherTongue!: string;
 
   @ApiPropertyOptional({ example: 'Software Engineer' })
   @IsOptional()
   @IsString()
   @MaxLength(100)
   profession?: string;
+
+  // Issue-226: Full schema mapping — missing fields added
+  @ApiPropertyOptional({ example: 'Hindi, English' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  knownLanguages?: string;
+
+  @ApiPropertyOptional({ example: '5-10 LPA' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(50)
+  annualIncomeSlab?: string;
+
+  @ApiPropertyOptional({ example: 'Postgraduate' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  education?: string;
+
+  @ApiPropertyOptional({ example: '1234', description: 'Last 4 digits of Aadhaar for compliance' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(10)
+  aadhaarMasked?: string;
 
   @ApiPropertyOptional({ example: '123 Main Street' })
   @IsOptional()
@@ -82,4 +112,15 @@ export class CreateParentDto {
   @IsString()
   @MaxLength(10)
   pincode?: string;
+
+  // Issue-222: Bidirectional linking — atomically link students on parent creation
+  @ApiPropertyOptional({
+    example: ['uuid-student-1'],
+    description: 'Optional student IDs to atomically link to this parent on creation',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @IsUUID(undefined, { each: true })
+  studentIds?: string[];
 }

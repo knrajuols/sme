@@ -181,6 +181,21 @@ export class FinanceController {
 
   // ── Invoices ───────────────────────────────────────────────────────────────
 
+  @Post('generate-from-master')
+  @ApiOperation({ summary: 'Copy fee categories and structures from MASTER_TEMPLATE into this tenant' })
+  async generateFromMaster(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ categoriesCreated: number; categoriesSkipped: number; structuresCreated: number; structuresSkipped: number }> {
+    return this.financeService.generateFromMaster({
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
   @Post('invoices/generate')
   @ApiOperation({ summary: 'Bulk-generate invoices for all students enrolled in a class' })
   async generateInvoices(

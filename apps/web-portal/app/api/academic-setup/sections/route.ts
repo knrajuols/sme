@@ -30,11 +30,8 @@ function err(code: string, msg: string, status: number): NextResponse {
 
 // ── GET /api/academic-setup/sections ─────────────────────────────────────────
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { searchParams } = new URL(req.url);
-  const classId = searchParams.get('classId');
-  const qs = classId ? `?classId=${encodeURIComponent(classId)}` : '';
   try {
-    const upstream = await fetch(`${TENANT_SVC}/academic/sections${qs}`, {
+    const upstream = await fetch(`${TENANT_SVC}/academic/sections`, {
       method: 'GET',
       headers: upstreamHeaders(req, 'GET /academic/sections'),
       cache: 'no-store',

@@ -41,6 +41,7 @@ export class FinanceService {
       id: string;
       name: string;
       description: string | null;
+      parentId: string | null;
       createdAt: Date;
       updatedAt: Date;
     }>
@@ -50,14 +51,15 @@ export class FinanceService {
         id: string;
         name: string;
         description: string | null;
+        parentId: string | null;
         createdAt: Date;
         updatedAt: Date;
       }>
     >`
-      SELECT "id", "name", "description", "createdAt", "updatedAt"
+      SELECT "id", "name", "description", "parentId", "createdAt", "updatedAt"
       FROM "FeeCategory"
       WHERE "tenantId" = ${tenantId} AND "softDelete" = false
-      ORDER BY "name" ASC
+      ORDER BY "parentId" NULLS FIRST, "name" ASC
     `;
   }
 
@@ -70,6 +72,7 @@ export class FinanceService {
         tenantId: context.tenantId,
         name: dto.name,
         description: dto.description ?? null,
+        parentId: dto.parentId ?? null,
         createdBy: context.userId,
         updatedBy: context.userId,
       },
@@ -289,8 +292,8 @@ export class FinanceService {
         academicYearId: dto.academicYearId,
         classId: dto.classId,
         feeCategoryId: dto.feeCategoryId,
-        amount: dto.amount,
-        dueDate: new Date(dto.dueDate),
+        amount: dto.amount ?? null,
+        dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         createdBy: context.userId,
         updatedBy: context.userId,
       },
@@ -342,7 +345,7 @@ export class FinanceService {
           feeCategoryId: dto.feeCategoryId,
         }),
         ...(dto.amount !== undefined && { amount: dto.amount }),
-        ...(dto.dueDate !== undefined && { dueDate: new Date(dto.dueDate) }),
+        ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? new Date(dto.dueDate) : null }),
         updatedBy: context.userId,
         updatedAt: new Date(),
       },
@@ -414,6 +417,10 @@ export class FinanceService {
       throw new NotFoundException('[ERR-INV-4041] Fee structure not found');
     }
     const structure = structures[0];
+    if (structure.amount == null) {
+      throw new BadRequestException('[ERR-INV-4002] Fee structure has no amount defined — set an amount before generating invoices');
+    }
+    const amountNum = Number(structure.amount);
 
     // Fetch all active enrollments for the class+year.
     const enrollments = await this.prisma.studentEnrollment.findMany({
@@ -454,10 +461,10 @@ export class FinanceService {
           tenantId: context.tenantId,
           studentId,
           feeStructureId: dto.feeStructureId,
-          amountDue: structure.amount,
+          amountDue: amountNum,
           amountPaid: 0,
           status: 'PENDING',
-          dueDate: structure.dueDate,
+          dueDate: structure.dueDate ?? new Date(),
           createdBy: context.userId,
           updatedBy: context.userId,
         })),
@@ -702,6 +709,322 @@ export class FinanceService {
     return payment;
   }
   // ── Shared helpers ─────────────────────────────────────────────────────────
+
+  /**
+   * Copies fee categories and fee structures from the MASTER_TEMPLATE partition
+   * into the target tenant. Skips categories that already exist by name.
+   * Returns counts of created/skipped items.
+   */
+  async generateFromMaster(
+    context: RequestContext,
+  ): Promise<{ categoriesCreated: number; categoriesSkipped: number; structuresCreated: number; structuresSkipped: number }> {
+    const MASTER = 'MASTER_TEMPLATE';
+    const tenantId = context.tenantId;
+
+    // ── Copy Fee Categories (parents first, then children) ─────────────────
+    const masterCategories = await this.prisma.feeCategory.findMany({
+      where: { tenantId: MASTER, softDelete: false },
+      select: { id: true, name: true, description: true, parentId: true },
+      orderBy: { parentId: { sort: 'asc', nulls: 'first' } },
+    });
+
+    const existingCategories = await this.prisma.feeCategory.findMany({
+      where: { tenantId, softDelete: false },
+      select: { id: true, name: true, parentId: true },
+    });
+
+    const catMap = new Map<string, string>(); // masterId → tenantId
+    let categoriesCreated = 0;
+    let categoriesSkipped = 0;
+
+    // Process parents first (parentId is null), then children
+    const parents = masterCategories.filter((c) => !c.parentId);
+    const children = masterCategories.filter((c) => c.parentId);
+
+    for (const mc of [...parents, ...children]) {
+      const tenantParentId = mc.parentId ? (catMap.get(mc.parentId) ?? null) : null;
+      const existing = existingCategories.find(
+        (e) => e.name === mc.name && e.parentId === tenantParentId,
+      );
+      if (existing) {
+        categoriesSkipped++;
+        catMap.set(mc.id, existing.id);
+        continue;
+      }
+
+      const created = await this.prisma.feeCategory.create({
+        data: {
+          tenantId,
+          name: mc.name,
+          description: mc.description,
+          parentId: tenantParentId,
+          createdBy: context.userId,
+          updatedBy: context.userId,
+        },
+        select: { id: true },
+      });
+      catMap.set(mc.id, created.id);
+      categoriesCreated++;
+    }
+
+    // ── Copy Fee Structures ──────────────────────────────────────────────────
+    const masterStructures = await this.prisma.feeStructure.findMany({
+      where: { tenantId: MASTER, softDelete: false },
+      select: { id: true, academicYearId: true, classId: true, feeCategoryId: true, amount: true, dueDate: true },
+    });
+
+    // Map master academic years/classes to tenant equivalents by name
+    const masterYears = await this.prisma.academicYear.findMany({
+      where: { tenantId: MASTER, softDelete: false },
+      select: { id: true, name: true },
+    });
+    const tenantYears = await this.prisma.academicYear.findMany({
+      where: { tenantId, softDelete: false },
+      select: { id: true, name: true },
+    });
+    const yearMap = new Map<string, string>();
+    for (const my of masterYears) {
+      const ty = tenantYears.find((t) => t.name === my.name);
+      if (ty) yearMap.set(my.id, ty.id);
+    }
+
+    const masterClasses = await this.prisma.class.findMany({
+      where: { tenantId: MASTER, softDelete: false },
+      select: { id: true, code: true },
+    });
+    const tenantClasses = await this.prisma.class.findMany({
+      where: { tenantId, softDelete: false },
+      select: { id: true, code: true },
+    });
+    const classMap = new Map<string, string>();
+    for (const mc of masterClasses) {
+      const tc = tenantClasses.find((t) => t.code === mc.code);
+      if (tc) classMap.set(mc.id, tc.id);
+    }
+
+    let structuresCreated = 0;
+    let structuresSkipped = 0;
+
+    for (const ms of masterStructures) {
+      const tenantYearId = yearMap.get(ms.academicYearId);
+      const tenantClassId = classMap.get(ms.classId);
+      const tenantCatId = catMap.get(ms.feeCategoryId);
+
+      if (!tenantYearId || !tenantClassId || !tenantCatId) {
+        structuresSkipped++;
+        continue;
+      }
+
+      // Check for existing duplicate (unique constraint: tenantId + yearId + classId + catId)
+      const exists = await this.prisma.feeStructure.findFirst({
+        where: {
+          tenantId,
+          academicYearId: tenantYearId,
+          classId: tenantClassId,
+          feeCategoryId: tenantCatId,
+          softDelete: false,
+        },
+        select: { id: true },
+      });
+      if (exists) {
+        structuresSkipped++;
+        continue;
+      }
+
+      await this.prisma.feeStructure.create({
+        data: {
+          tenantId,
+          academicYearId: tenantYearId,
+          classId: tenantClassId,
+          feeCategoryId: tenantCatId,
+          amount: ms.amount,
+          dueDate: ms.dueDate,
+          createdBy: context.userId,
+          updatedBy: context.userId,
+        },
+      });
+      structuresCreated++;
+    }
+
+    await this.publishAudit(
+      context,
+      'CREATE',
+      'FeeCategory',
+      'BULK',
+      `Generated from master: ${categoriesCreated} categories, ${structuresCreated} structures`,
+      { categoriesCreated, categoriesSkipped, structuresCreated, structuresSkipped },
+    );
+
+    return { categoriesCreated, categoriesSkipped, structuresCreated, structuresSkipped };
+  }
+
+  // ── Seed Fee Structures ────────────────────────────────────────────────────
+
+  /**
+   * Seeds fee structures for the MASTER_TEMPLATE tenant by creating one
+   * FeeStructure per (FeeCategory × Class) for the active academic year,
+   * using standard Indian K-12 fee amounts.
+   *
+   * Admission Phase (3 items per class):
+   *   Registration Fee:                 ₹500   (non-refundable)
+   *   Admission Fee:                    ₹5,000
+   *   Security Deposit/Caution Deposit: ₹5,000 (refundable)
+   *
+   * Annual Fees (4 items per class):
+   *   Infrastructure/Development Fee:   ₹2,000
+   *   Examination Fee:                  ₹1,000
+   *   Lab/Library Fee:                  ₹1,000
+   *   Student Insurance & Diary:        ₹500
+   *
+   * Tuition Fee (class-tier based):
+   *   Primary (C1-5):      ₹3,500
+   *   Middle (C6-8):       ₹4,500
+   *   Secondary (C9-10):   ₹5,500
+   *   Sr.Secondary (C11-12): ₹6,500
+   *
+   * Utilities Fee: null (Transport slab-based — school defines)
+   *
+   * Skips any structure that already exists (idempotent).
+   */
+  async seedFeeStructures(
+    context: RequestContext,
+  ): Promise<{ created: number; skipped: number }> {
+    const tenantId = context.tenantId;
+
+    // ── 1. Active Academic Year ──────────────────────────────────────────────
+    const activeYear = await this.prisma.academicYear.findFirst({
+      where: { tenantId, isActive: true, softDelete: false },
+      select: { id: true, name: true },
+    });
+    if (!activeYear) {
+      throw new BadRequestException(
+        '[ERR-FS-SEED-4001] No active Academic Year found. Please create and activate an Academic Year first.',
+      );
+    }
+
+    // ── 2. Fee Categories (only leaf items — items with parentId, or standalone parents with no children) ──
+    const allCategories = await this.prisma.feeCategory.findMany({
+      where: { tenantId, softDelete: false },
+      select: { id: true, name: true, parentId: true },
+    });
+    if (allCategories.length === 0) {
+      throw new BadRequestException(
+        '[ERR-FS-SEED-4002] No Fee Categories found. Please seed Fee Categories first.',
+      );
+    }
+    // Parent IDs that have children — FeeStructures should NOT link to these
+    const parentIdsWithChildren = new Set(
+      allCategories.filter((c) => c.parentId).map((c) => c.parentId!),
+    );
+    // Leaf categories = items (parentId set) + standalone parents (no children)
+    const categories = allCategories.filter(
+      (c) => c.parentId !== null || !parentIdsWithChildren.has(c.id),
+    );
+
+    // ── 3. Classes for the active year ───────────────────────────────────────
+    const classes = await this.prisma.class.findMany({
+      where: { tenantId, academicYearId: activeYear.id, softDelete: false },
+      select: { id: true, code: true },
+      orderBy: { code: 'asc' },
+    });
+    if (classes.length === 0) {
+      throw new BadRequestException(
+        '[ERR-FS-SEED-4003] No Classes found for the active Academic Year. Please seed Classes first.',
+      );
+    }
+
+    // ── 4. Amount rules (keyed by category name) ─────────────────────────────
+    // Tuition tiers keyed by class code range
+    function tuitionAmount(code: string): number | null {
+      const num = parseInt(code.replace(/\D/g, ''), 10);
+      if (isNaN(num)) return null;
+      if (num >= 1 && num <= 5)  return 3500;   // Primary
+      if (num >= 6 && num <= 8)  return 4500;   // Middle School
+      if (num >= 9 && num <= 10) return 5500;   // Secondary
+      if (num >= 11 && num <= 12) return 6500;  // Sr. Secondary
+      return null;
+    }
+
+    // Flat-amount categories (same for every class)
+    const flatAmountMap: Record<string, number | null> = {
+      // Admission phase
+      'Registration Fee':                 500,
+      'Admission Fee':                    5000,
+      'Security Deposit/Caution Deposit': 5000,
+      // Annual fees
+      'Infrastructure/Development Fee':   2000,
+      'Examination Fee':                  1000,
+      'Lab/Library Fee':                  1000,
+      'Student Insurance & Diary':        500,
+      // School-defined
+      'Utilities Fee':                    null,
+    };
+
+    // ── 5. Create structures ─────────────────────────────────────────────────
+    let created = 0;
+    let skipped = 0;
+
+    for (const cls of classes) {
+      for (const cat of categories) {
+        // Determine amount: Tuition is class-tier based, others from flat map
+        const amount =
+          cat.name === 'Tuition Fee'
+            ? tuitionAmount(cls.code)
+            : (flatAmountMap[cat.name] ?? null);
+
+        // Check for existing record (including soft-deleted)
+        const existing = await this.prisma.feeStructure.findFirst({
+          where: {
+            tenantId,
+            academicYearId: activeYear.id,
+            classId: cls.id,
+            feeCategoryId: cat.id,
+          },
+          select: { id: true, softDelete: true, amount: true },
+        });
+
+        if (existing && !existing.softDelete) {
+          skipped++;
+          continue;
+        }
+
+        if (existing && existing.softDelete) {
+          // Reactivate soft-deleted record with correct amount
+          await this.prisma.feeStructure.update({
+            where: { id: existing.id },
+            data: { softDelete: false, amount, updatedBy: context.userId, updatedAt: new Date() },
+          });
+          created++;
+          continue;
+        }
+
+        await this.prisma.feeStructure.create({
+          data: {
+            tenantId,
+            academicYearId: activeYear.id,
+            classId: cls.id,
+            feeCategoryId: cat.id,
+            amount,
+            dueDate: null,
+            createdBy: context.userId,
+            updatedBy: context.userId,
+          },
+        });
+        created++;
+      }
+    }
+
+    await this.publishAudit(
+      context,
+      'SEED',
+      'FeeStructure',
+      'BULK',
+      `Seeded fee structures for ${activeYear.name}: ${created} created, ${skipped} skipped`,
+      { academicYearId: activeYear.id, created, skipped },
+    );
+
+    return { created, skipped };
+  }
 
   private async assertEntityExists(
     tableName: string,

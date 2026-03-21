@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AuthGuard } from '../../../components/AuthGuard';
 import { bffFetch } from '../../../lib/api';
@@ -9,14 +9,15 @@ import { PremiumCard } from '../../../components/ui/PremiumCard';
 
 // ── Reference types ────────────────────────────────────────────────────────────
 interface ExamRef       { id: string; name: string; classId: string; academicYearId: string; }
-interface SectionRef    { id: string; name: string; classId: string; }
+interface ClassRef      { id: string; name: string; }
+interface ClassSectionRef { id: string; name: string; classId: string; className: string; sectionId: string; sectionName: string; }
 interface SubjectRef    { id: string; name: string; code: string; }
 interface ExamSubjectRef { id: string; examId: string; subjectId: string; maxMarks: number; }
 interface EnrollmentRef { id: string; studentId: string; classId: string; sectionId: string; rollNumber: string; }
 interface StudentRef    { id: string; admissionNumber: string; firstName: string; lastName: string; }
 
 // ── Existing-mark response row ─────────────────────────────────────────────────
-interface ExistingMark  { studentId: string; marksObtained: number; remarks: string | null; }
+interface ExistingMark  { studentId: string; marksObtained: number; isAbsent?: boolean; remarks: string | null; }
 
 // ── Per-student editable row ────────────────────────────────────────────────────
 interface MarkRow {
@@ -30,16 +31,33 @@ interface MarkRow {
   remarks: string;
 }
 
+// ── State persistence helpers ──────────────────────────────────────────────────
+const STORAGE_KEY = 'sme_marks_filters';
+function saveFilters(examId: string, sectionId: string, examSubjectId: string) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({ examId, sectionId, examSubjectId })); } catch { /* noop */ }
+}
+function loadFilters(): { examId: string; sectionId: string; examSubjectId: string } | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
 // ── Main component ──────────────────────────────────────────────────────────────
 function MarksPage({ user: _user }: { user: UserClaims }) {
   // Reference data (loaded once)
   const [exams,    setExams]    = useState<ExamRef[]>([]);
-  const [sections, setSections] = useState<SectionRef[]>([]);
+  const [classes,  setClasses]  = useState<ClassRef[]>([]);
   const [subjects, setSubjects] = useState<SubjectRef[]>([]);
   const [students, setStudents] = useState<StudentRef[]>([]);
 
+  // Sections fetched per-class via ClassSection junction table
+  const [classSections, setClassSections] = useState<ClassSectionRef[]>([]);
+
   // Filter state
   const [examId,        setExamId]        = useState('');
+  const [classId,       setClassId]       = useState('');
   const [sectionId,     setSectionId]     = useState('');
   const [examSubjectId, setExamSubjectId] = useState('');
 
@@ -49,11 +67,16 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
   // Grid data
   const [rows, setRows] = useState<MarkRow[]>([]);
 
+  // Attendance lock state
+  const [attendanceLocked, setAttendanceLocked] = useState(false);
+  const [locking, setLocking] = useState(false);
+
   // UI state
   const [loadingRef,  setLoadingRef]  = useState(true);
   const [loadingGrid, setLoadingGrid] = useState(false);
   const [saving,      setSaving]      = useState(false);
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [restoredFilters, setRestoredFilters] = useState(false);
 
   function showBanner(type: 'success' | 'error', msg: string) {
     setBanner({ type, msg });
@@ -64,27 +87,31 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
   useEffect(() => {
     Promise.all([
       bffFetch<ExamRef[]>('/api/academic/exams'),
-      bffFetch<SectionRef[]>('/api/academic-setup/sections'),
+      bffFetch<ClassRef[]>('/api/academic-setup/classes'),
       bffFetch<SubjectRef[]>('/api/academic-setup/subjects'),
       bffFetch<StudentRef[]>('/api/academic/students'),
     ])
-      .then(([ex, sec, sub, stu]) => {
+      .then(([ex, cls, sub, stu]) => {
         setExams(ex);
-        setSections(sec);
+        setClasses(cls);
         setSubjects(sub);
         setStudents(stu);
+        // Restore persisted filter state
+        const saved = loadFilters();
+        if (saved?.examId && ex.some((e) => e.id === saved.examId)) {
+          setExamId(saved.examId);
+          // sectionId and examSubjectId will be restored after exam-subjects load
+          setRestoredFilters(true);
+        }
       })
       .catch(() => showBanner('error', 'Failed to load reference data.'))
       .finally(() => setLoadingRef(false));
   }, []);
 
-  // Derived: selected exam object
-  const selectedExam = useMemo(() => exams.find((e) => e.id === examId) ?? null, [exams, examId]);
-
-  // Derived: sections for the selected exam's class
-  const filteredSections = useMemo(
-    () => selectedExam ? sections.filter((s) => s.classId === selectedExam.classId) : [],
-    [sections, selectedExam],
+  // Derived: class name for display (auto-selected from exam)
+  const selectedClassName = useMemo(
+    () => classes.find((c) => c.id === classId)?.name ?? '',
+    [classes, classId],
   );
 
   // Derived: selected ExamSubject object (to display maxMarks)
@@ -93,23 +120,69 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
     [examSubjects, examSubjectId],
   );
 
-  // Load ExamSubjects when exam changes
+  // When exam changes: auto-set classId, load ExamSubjects + ClassSections
   useEffect(() => {
     setExamSubjects([]);
     setExamSubjectId('');
+    setClassSections([]);
     setSectionId('');
     setRows([]);
-    if (!examId) return;
+    setAttendanceLocked(false);
 
-    bffFetch<ExamSubjectRef[]>(`/api/academic/exam-subjects?examId=${examId}`)
-      .then(setExamSubjects)
-      .catch(() => showBanner('error', 'Failed to load exam subjects.'));
-  }, [examId]);
+    if (!examId) { setClassId(''); return; }
+
+    const exam = exams.find((e) => e.id === examId);
+    if (!exam) { setClassId(''); return; }
+
+    // Auto-select the class from the exam
+    setClassId(exam.classId);
+
+    // Fetch exam-subjects and class-sections in parallel
+    Promise.all([
+      bffFetch<ExamSubjectRef[]>(`/api/academic/exam-subjects?examId=${examId}`),
+      bffFetch<ClassSectionRef[]>(`/api/academic/class-sections?classId=${exam.classId}`),
+    ])
+      .then(([es, cs]) => {
+        setExamSubjects(es);
+        setClassSections(cs);
+        // Restore saved section and subject
+        if (restoredFilters) {
+          const saved = loadFilters();
+          if (saved?.sectionId && cs.some((c) => c.sectionId === saved.sectionId)) {
+            setSectionId(saved.sectionId);
+          }
+          if (saved?.examSubjectId && es.some((e) => e.id === saved.examSubjectId)) {
+            setExamSubjectId(saved.examSubjectId);
+          }
+          setRestoredFilters(false);
+        }
+      })
+      .catch(() => showBanner('error', 'Failed to load exam details.'));
+  }, [examId, exams]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist filters to localStorage whenever they change
+  useEffect(() => {
+    if (examId) saveFilters(examId, sectionId, examSubjectId);
+  }, [examId, sectionId, examSubjectId]);
 
   // Reset grid when filters change
   useEffect(() => {
     setRows([]);
-  }, [sectionId, examSubjectId]);
+    setAttendanceLocked(false);
+  }, [classId, sectionId, examSubjectId]);
+
+  // Fetch lock status when exam and section are selected
+  const fetchLockStatus = useCallback(async () => {
+    if (!examId || !sectionId) { setAttendanceLocked(false); return; }
+    try {
+      const data = await bffFetch<{ locked: boolean }>(`/api/academic/marks/attendance-lock?examId=${examId}&sectionId=${sectionId}`);
+      setAttendanceLocked(data.locked);
+    } catch {
+      setAttendanceLocked(false);
+    }
+  }, [examId, sectionId]);
+
+  useEffect(() => { fetchLockStatus(); }, [fetchLockStatus]);
 
   // Subject name lookup
   const subjectMap = useMemo(() => {
@@ -126,11 +199,11 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
   }, [students]);
 
   async function loadGrid() {
-    if (!examId || !sectionId || !examSubjectId) return;
+    if (!examId || !classId || !sectionId || !examSubjectId) return;
     setLoadingGrid(true);
     try {
       const [enrollments, marksData] = await Promise.all([
-        bffFetch<EnrollmentRef[]>(`/api/academic/enrollments?classId=${selectedExam!.classId}&sectionId=${sectionId}`),
+        bffFetch<EnrollmentRef[]>(`/api/academic/enrollments?classId=${classId}&sectionId=${sectionId}`),
         bffFetch<{ maxMarks: number; marks: ExistingMark[] }>(`/api/academic/marks?examSubjectId=${examSubjectId}&sectionId=${sectionId}`),
       ]);
 
@@ -142,15 +215,15 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
         const stu = studentMap[enr.studentId];
         const existing = markMap[enr.studentId];
 
-        // Detect absent from remark prefix saved during previous bulk-save
-        const isAbsent = existing?.remarks?.startsWith('ABSENT') ?? false;
+        // Detect absent from explicit isAbsent field or remark prefix (backward compat)
+        const isAbsent = existing?.isAbsent ?? existing?.remarks?.startsWith('ABSENT') ?? false;
 
         return {
           studentId: enr.studentId,
           admissionNumber: stu?.admissionNumber ?? '—',
           firstName:        stu?.firstName ?? '—',
           lastName:         stu?.lastName  ?? '',
-          rollNumber:       enr.rollNumber,
+          rollNumber:       enr.rollNumber ?? '',
           obtainedMarks:    existing && !isAbsent ? String(existing.marksObtained) : '',
           isAbsent,
           remarks:          existing
@@ -168,6 +241,8 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
       });
 
       setRows(built);
+      // Also refresh lock status
+      await fetchLockStatus();
     } catch (e: unknown) {
       showBanner('error', e instanceof Error ? e.message : 'Failed to load student data.');
     } finally {
@@ -192,11 +267,19 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
     if (!selectedExamSubject) return;
     const maxMarks = selectedExamSubject.maxMarks;
 
-    // Client-side validation
-    for (const row of rows) {
+    // Only process rows where the teacher has entered something (marks or absent)
+    const filledRows = rows.filter((r) => r.isAbsent || r.obtainedMarks !== '');
+
+    if (filledRows.length === 0) {
+      showBanner('error', 'Enter marks or mark at least one student as absent before saving.');
+      return;
+    }
+
+    // Validate only the filled rows
+    for (const row of filledRows) {
       if (!row.isAbsent) {
-        if (row.obtainedMarks === '' || isNaN(parseFloat(row.obtainedMarks))) {
-          showBanner('error', `Enter marks for ${row.firstName} ${row.lastName} (${row.admissionNumber}) or mark as absent.`);
+        if (isNaN(parseFloat(row.obtainedMarks))) {
+          showBanner('error', `Invalid marks for ${row.firstName} ${row.lastName} (${row.admissionNumber}).`);
           return;
         }
         if (parseFloat(row.obtainedMarks) > maxMarks) {
@@ -210,10 +293,10 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
     try {
       const payload = {
         examSubjectId,
-        classId: selectedExam!.classId,
+        classId,
         sectionId,
-        records: rows.map((r) => ({
-          studentId:    r.studentId,
+        records: filledRows.map((r) => ({
+          studentId:     r.studentId,
           obtainedMarks: r.isAbsent ? 0 : parseFloat(r.obtainedMarks),
           isAbsent:      r.isAbsent,
           remarks:       r.remarks.trim() || undefined,
@@ -225,7 +308,7 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
         body: JSON.stringify(payload),
       });
 
-      showBanner('success', `Marks saved for ${rows.length} students.`);
+      showBanner('success', `Marks saved for ${filledRows.length} of ${rows.length} students.`);
     } catch (e: unknown) {
       showBanner('error', e instanceof Error ? e.message : 'Save failed.');
     } finally {
@@ -233,7 +316,26 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
     }
   }
 
-  const allFilled = rows.length > 0;
+  async function handleLockAttendance() {
+    if (!examId || !sectionId) return;
+    setLocking(true);
+    try {
+      await bffFetch('/api/academic/marks/lock-attendance', {
+        method: 'POST',
+        body: JSON.stringify({ examId, sectionId }),
+      });
+      setAttendanceLocked(true);
+      showBanner('success', 'Attendance locked. Absent checkboxes are now read-only.');
+    } catch (e: unknown) {
+      showBanner('error', e instanceof Error ? e.message : 'Failed to lock attendance.');
+    } finally {
+      setLocking(false);
+    }
+  }
+
+  // Enable Save as soon as at least one row has data (marks entered or marked absent)
+  const canSave = rows.some((r) => r.isAbsent || r.obtainedMarks !== '');
+  const filledCount = rows.filter((r) => r.isAbsent || r.obtainedMarks !== '').length;
   const absentCount = rows.filter((r) => r.isAbsent).length;
 
   const inputCls = (hasError?: boolean) =>
@@ -256,14 +358,14 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
 
         {/* ── Filter bar ─────────────────────────────────────────────────────── */}
         <PremiumCard accentColor="yellow" className="p-5 mb-6">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             {/* Exam */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">Exam</label>
               <select
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 value={examId}
-                onChange={(e) => { setExamId(e.target.value); setSectionId(''); setExamSubjectId(''); setRows([]); }}
+                onChange={(e) => setExamId(e.target.value)}
                 disabled={loadingRef}
               >
                 <option value="">— select exam —</option>
@@ -271,17 +373,29 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
               </select>
             </div>
 
-            {/* Section (filtered by exam's class) */}
+            {/* Class (auto-selected from exam) */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 mb-1.5">Class</label>
+              <input
+                type="text"
+                readOnly
+                value={selectedClassName || (examId ? 'Loading…' : '')}
+                placeholder="— auto from exam —"
+                className="w-full rounded-lg border border-slate-300 bg-slate-100 px-3 py-2 text-sm text-slate-600 cursor-default"
+              />
+            </div>
+
+            {/* Section (from ClassSection junction table) */}
             <div>
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">Section</label>
               <select
                 className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
                 value={sectionId}
                 onChange={(e) => { setSectionId(e.target.value); setRows([]); }}
-                disabled={!examId}
+                disabled={!classId || classSections.length === 0}
               >
                 <option value="">— select section —</option>
-                {filteredSections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {classSections.map((cs) => <option key={cs.sectionId} value={cs.sectionId}>{cs.sectionName}</option>)}
               </select>
             </div>
 
@@ -312,7 +426,7 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
               <button
                 type="button"
                 onClick={loadGrid}
-                disabled={!examId || !sectionId || !examSubjectId || loadingGrid}
+                disabled={!examId || !classId || !sectionId || !examSubjectId || loadingGrid}
                 className="w-full rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-40 transition-colors"
               >
                 {loadingGrid ? 'Loading…' : 'Load Students'}
@@ -320,19 +434,27 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
             </div>
           </div>
 
-          {/* Max marks reminder */}
-          {selectedExamSubject && (
-            <p className="mt-3 text-xs text-slate-500">
-              Max marks for this subject: <span className="font-semibold text-slate-700">{selectedExamSubject.maxMarks}</span>
-            </p>
-          )}
+          {/* Max marks reminder + Lock status */}
+          <div className="mt-3 flex items-center justify-between">
+            {selectedExamSubject && (
+              <p className="text-xs text-slate-500">
+                Max marks for this subject: <span className="font-semibold text-slate-700">{selectedExamSubject.maxMarks}</span>
+              </p>
+            )}
+            {attendanceLocked && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>
+                Attendance Locked
+              </span>
+            )}
+          </div>
         </PremiumCard>
 
         {/* ── Grid ────────────────────────────────────────────────────────────── */}
         {rows.length === 0 && !loadingGrid && (
           <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center">
             <p className="text-slate-400 text-sm">
-              {examId && sectionId && examSubjectId
+              {examId && classId && sectionId && examSubjectId
                 ? 'No students enrolled in this section. Click Load Students to retry.'
                 : 'Select all filters above and click Load Students.'}
             </p>
@@ -341,19 +463,33 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
 
         {rows.length > 0 && (
           <>
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <p className="text-sm text-slate-600">
                 <span className="font-semibold">{rows.length}</span> students ·{' '}
+                <span className="text-blue-700 font-semibold">{filledCount} filled</span> ·{' '}
                 <span className="text-yellow-700 font-semibold">{absentCount}</span> absent
               </p>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving || !allFilled}
-                className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
-              >
-                {saving ? 'Saving…' : 'Save Marks'}
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Lock Attendance button — only show when not yet locked */}
+                {!attendanceLocked && examId && sectionId && (
+                  <button
+                    type="button"
+                    onClick={handleLockAttendance}
+                    disabled={locking}
+                    className="rounded-lg border border-amber-500 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-700 hover:bg-amber-100 disabled:opacity-40 transition-colors"
+                  >
+                    {locking ? 'Locking…' : 'Lock Attendance'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving || !canSave}
+                  className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                >
+                  {saving ? 'Saving…' : 'Save Marks'}
+                </button>
+              </div>
             </div>
 
             {/* Desktop table */}
@@ -393,7 +529,8 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
                             type="checkbox"
                             checked={row.isAbsent}
                             onChange={(e) => updateRow(row.studentId, 'isAbsent', e.target.checked)}
-                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            disabled={attendanceLocked}
+                            className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                           />
                         </td>
                         <td className="px-4 py-2.5">
@@ -449,7 +586,8 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
                           type="checkbox"
                           checked={row.isAbsent}
                           onChange={(e) => updateRow(row.studentId, 'isAbsent', e.target.checked)}
-                          className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                          disabled={attendanceLocked}
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
                         />
                         Absent
                       </label>
@@ -491,14 +629,26 @@ function MarksPage({ user: _user }: { user: UserClaims }) {
 
             {/* Sticky save bar on mobile */}
             <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 z-30">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving || !allFilled}
-                className="w-full rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
-              >
-                {saving ? 'Saving…' : `Save Marks (${rows.length} students)`}
-              </button>
+              <div className="flex gap-2">
+                {!attendanceLocked && examId && sectionId && (
+                  <button
+                    type="button"
+                    onClick={handleLockAttendance}
+                    disabled={locking}
+                    className="flex-1 rounded-lg border border-amber-500 bg-amber-50 py-3 text-sm font-semibold text-amber-700 disabled:opacity-40"
+                  >
+                    {locking ? 'Locking…' : 'Lock'}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving || !canSave}
+                  className="flex-1 rounded-lg bg-blue-600 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40 transition-colors"
+                >
+                  {saving ? 'Saving…' : `Save Marks (${filledCount} / ${rows.length})`}
+                </button>
+              </div>
             </div>
           </>
         )}

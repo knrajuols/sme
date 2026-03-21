@@ -327,6 +327,7 @@ export class AppService implements OnModuleInit {
       roles,
       permissions: permissionRows.map((item) => item.code),
       sessionId,
+      email: user.email ?? undefined,
       expiresInSeconds: expiresIn,
     });
 

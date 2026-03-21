@@ -26,21 +26,25 @@ const ADMIN_GROUPS: NavGroup[] = [
   {
     label: 'Academics',
     links: [
-      { href: '/admin/academic-setup', label: 'Academic Setup'  },
-      { href: '/admin/periods',        label: 'Periods'         },
-      { href: '/admin/grade-scales',   label: 'Grade Scales'    },
-      { href: '/admin/exam-subjects',  label: 'Exam Subjects'   },
+      { href: '/admin/academic-setup',                label: 'Academic Setup'     },
+      { href: '/admin/academics/academic-calendar',   label: 'Academic Calendar'  },
+      { href: '/admin/academics/holidays',            label: 'Holiday Management' },
+      { href: '/admin/periods',                       label: 'Periods'            },
+      { href: '/admin/grade-scales',                  label: 'Grade Scales'       },
+      { href: '/admin/exam-subjects',                 label: 'Exam Subjects'      },
     ],
   },
   {
     label: 'Operations',
     links: [
-      { href: '/admin/attendance',    label: 'Attendance'     },
+      { href: '/admin/attendance',        label: 'Attendance'        },
+      { href: '/admin/attendance-report',  label: 'Attendance Report' },
       { href: '/admin/exams',         label: 'Exams'          },
       { href: '/admin/examinations',  label: 'Exam Schedule'  },
       { href: '/admin/marks',         label: 'Marks Entry'    },
       { href: '/admin/results',       label: 'Results'        },
       { href: '/admin/analytics',     label: 'Analytics'      },
+      { href: '/admin/marks-ranks',   label: 'Marks & Ranks'  },
     ],
   },
   {
@@ -56,6 +60,7 @@ const ADMIN_GROUPS: NavGroup[] = [
     label: 'Scheduling',
     links: [
       { href: '/admin/scheduling/timetable', label: 'Timetable' },
+      { href: '/admin/scheduling/timetable-v2', label: 'Timetable V2' },
     ],
   },
 ];
@@ -273,18 +278,10 @@ export function Navbar() {
             </button>
           )}
 
-          {claims?.sub && (
-            <>
-              <span
-                title={claims.sub}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white/10 text-white text-xs font-bold border border-white/20 flex-shrink-0"
-              >
-                {initials}
-              </span>
-              <span className="hidden lg:block text-xs text-slate-300 max-w-[140px] truncate">
-                {claims.sub}
-              </span>
-            </>
+          {claims?.email && (
+            <span className="hidden lg:block text-xs text-slate-300 max-w-[180px] truncate" title={claims.email}>
+              {claims.email}
+            </span>
           )}
 
           <button

@@ -1,0 +1,217 @@
+// ==========================================
+// 1. TRANSPORT STAFF
+// ==========================================
+
+model Driver {
+  id                       String    @id @default(uuid())
+  tenantId                 String
+  name                     String    
+  mobile                   String    
+  licenseNumber            String    
+  licenseExpiry            DateTime  
+  badgeNumber              String?   
+  badgeExpiry              DateTime? 
+  policeVerificationStatus String?   // e.g., "Verified", "Pending"
+  isActive                 Boolean   @default(true) 
+  deletedAt                DateTime? 
+
+  vehicles                 Vehicle[]
+
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([tenantId])
+}
+
+model Attendant {
+  id                       String    @id @default(uuid())
+  tenantId                 String
+  name                     String    
+  mobile                   String    
+  policeVerificationStatus String?   
+  isActive                 Boolean   @default(true) 
+  deletedAt                DateTime? 
+
+  vehicles                 Vehicle[]
+
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([tenantId])
+}
+
+// ==========================================
+// 2. FLEET MANAGEMENT (VEHICLES)
+// ==========================================
+
+model Vehicle {
+  id                        String    @id @default(uuid())
+  tenantId                  String
+  registrationNo            String    // e.g., TS-07-UA-1234
+  vehicleType               String    // e.g., Bus, Minivan, Winger
+  capacity                  Int       // Total physical seats
+  
+  // Staff Assignment
+  driverId                  String?   
+  driver                    Driver?   @relation(fields: [driverId], references: [id])
+  attendantId               String?   
+  attendant                 Attendant? @relation(fields: [attendantId], references: [id])
+
+  // Compliance & Legal 
+  fitnessCertificateNo      String?   
+  fitnessExpiryDate         DateTime? 
+  insurancePolicyNo         String?   
+  insuranceExpiryDate       DateTime? 
+  pucCertificateNo          String?   
+  pucExpiryDate             DateTime? 
+  permitNo                  String?   
+  permitExpiryDate          DateTime? 
+
+  // Maintenance & Safety
+  lastServiceDate           DateTime? 
+  nextServiceDue            DateTime? 
+  odometerReading           Int?      
+  gpsDeviceId               String?   
+  cctvInstalled             Boolean   @default(false) 
+  fireExtinguisherAvailable Boolean   @default(false) 
+  firstAidAvailable         Boolean   @default(false) 
+
+  isActive                  Boolean   @default(true) 
+  deletedAt                 DateTime? 
+
+  // Operational mapping
+  trips                     RouteTrip[]
+
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+
+  @@unique([tenantId, registrationNo])
+  @@index([tenantId])
+  @@index([driverId])
+}
+
+// ==========================================
+// 3. ROUTE & GEOGRAPHY MASTER
+// ==========================================
+
+model Stop {
+  id               String      @id @default(uuid())
+  tenantId         String      
+  stopName         String      // e.g., "Greenwood Complex"
+  latitude         Float?      
+  longitude        Float?      
+  landmark         String?     
+  
+  routeMappings    RouteStop[]
+
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  @@unique([tenantId, stopName])
+  @@index([tenantId])
+}
+
+model TransportRoute {
+  id                       String    @id @default(uuid())
+  tenantId                 String
+  routeCode                String    // e.g., "R-01"
+  routeName                String    // e.g., "North City Expressway"
+  startLocation            String?   
+  endLocation              String?   
+  estimatedDistanceKm      Float?    
+  estimatedDurationMinutes Int?      
+  
+  isActive                 Boolean   @default(true) 
+
+  trips                    RouteTrip[]
+  stops                    RouteStop[]
+  allocations              TransportAllocation[]
+
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@unique([tenantId, routeCode])
+  @@index([tenantId])
+}
+
+model RouteTrip {
+  id               String         @id @default(uuid())
+  tenantId         String
+  
+  routeId          String         
+  route            TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  
+  tripType         String         // e.g., "PICKUP", "DROP"
+  startTime        String         // e.g., "07:00 AM"
+  endTime          String         // e.g., "08:30 AM"
+
+  vehicleId        String?        
+  vehicle          Vehicle?       @relation(fields: [vehicleId], references: [id])
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([tenantId])
+  @@index([routeId])
+  @@index([vehicleId])
+}
+
+model RouteStop {
+  id               String         @id @default(uuid())
+  tenantId         String         
+  routeId          String         
+  route            TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  
+  stopId           String         
+  stop             Stop           @relation(fields: [stopId], references: [id])
+  
+  stopSequence     Int            // Defines order of stops on the route (1, 2, 3...)
+  distanceFromStart Float?        // Distance hook for Fee Slabs
+  pickupTime       String?        
+  dropTime         String?        
+
+  pickupAllocations TransportAllocation[] @relation("PickupStop")
+  dropAllocations   TransportAllocation[] @relation("DropStop")
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([routeId, stopSequence]) 
+  @@index([tenantId])
+  @@index([stopId])
+}
+
+// ==========================================
+// 4. STUDENT ALLOCATION & FEE HOOK
+// ==========================================
+
+model TransportAllocation {
+  id               String         @id @default(uuid())
+  tenantId         String
+  academicYearId   String
+  studentId        String         
+  
+  routeId          String         
+  route            TransportRoute @relation(fields: [routeId], references: [id])
+  
+  pickupStopId     String         
+  pickupStop       RouteStop      @relation("PickupStop", fields: [pickupStopId], references: [id])
+  
+  dropStopId       String         
+  dropStop         RouteStop      @relation("DropStop", fields: [dropStopId], references: [id])
+  
+  distanceSlabId   String?        // Hook for Fee Module billing logic
+  transportFee     Float?         // Explicit/Overridden fee amount
+  
+  startDate        DateTime
+  endDate          DateTime?
+  isActive         Boolean        @default(true)
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@unique([academicYearId, studentId])
+  @@index([tenantId])
+  @@index([routeId])
+  @@index([studentId])
+}

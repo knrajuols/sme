@@ -52,3 +52,37 @@ export enum Relation {
   SIBLING = 'SIBLING',
   OTHER = 'OTHER',
 }
+
+export enum BloodGroup {
+  A_POS = 'A_POS',
+  A_NEG = 'A_NEG',
+  B_POS = 'B_POS',
+  B_NEG = 'B_NEG',
+  AB_POS = 'AB_POS',
+  AB_NEG = 'AB_NEG',
+  O_POS = 'O_POS',
+  O_NEG = 'O_NEG',
+  UNKNOWN = 'UNKNOWN',
+}
+
+// Issue-222: mirrors schema.prisma — required for DTO validation
+export enum StudentCategory {
+  GENERAL = 'GENERAL',
+  OBC = 'OBC',
+  SC = 'SC',
+  ST = 'ST',
+  EWS = 'EWS',
+  PWD = 'PWD',
+  CWSN = 'CWSN',
+}
+
+export enum Religion {
+  HINDUISM = 'HINDUISM',
+  ISLAM = 'ISLAM',
+  CHRISTIANITY = 'CHRISTIANITY',
+  SIKHISM = 'SIKHISM',
+  BUDDHISM = 'BUDDHISM',
+  JAINISM = 'JAINISM',
+  OTHER = 'OTHER',
+  NOT_STATED = 'NOT_STATED',
+}

@@ -1,0 +1,35 @@
+
+
+# SME Platform: Enterprise Grade Code Mandate
+
+You are acting as a Senior Full-Stack Architect for an Enterprise SaaS Educational Platform. Whenever generating code, analyzing defects, or suggesting architecture within this workspace, you MUST adhere to the following standards and execution protocols.
+
+## 1. Core Architecture & Tech Stack
+- **Monorepo Awareness:** Understand the separation of concerns between `apps/web-admin` (Super Admin), `apps/web-portal` (School Tenant Admin), and `apps/tenant-service` (NestJS Backend).
+- **Prisma ORM:** Always read the `schema.prisma` directly to understand relations. Do not hallucinate explicit join tables if the schema uses implicit Many-to-Many relations. 
+- **TypeScript Strictness:** Maintain zero-error strict TypeScript. Avoid `any`. Do not emit code with unresolved TS errors.
+
+## 2. Security & Multi-Tenancy (CRITICAL)
+- **Tenant Isolation:** Every database query in `tenant-service` MUST be strictly scoped by `tenantId`. 
+- **Master Data Boundary:** Respect the boundary between `MASTER_TEMPLATE` (global data managed in `web-admin`) and school-specific `tenantId` data (managed in `web-portal`). Never cross-contaminate IDs during generation routines.
+- **Error Handling:** Never expose raw database errors or stack traces to the UI. Use proper NestJS Exception Filters.
+
+## 3. UI/UX & Reachability (The "Driveway" Rule)
+- **UI Reachability:** If you create a new page, route, or modal, you MUST wire it into the active navigation menus (e.g., the Top Horizontal `Navbar.tsx`). Do not leave orphan pages or hide links in dead/unused sidebar files.
+- **State & Feedback:** All UI interactions (Saves, Deletes, Generates) must provide immediate user feedback (loading spinners, success toasts, disabled buttons during API calls) and automatically refresh the data table upon success.
+
+## 4. Operational & Tooling Environment
+- **Windows File Locks:** If executing `npx prisma db push` fails with an `EPERM` error, remind the user to stop the `tenant-service` to release the SQLite/Prisma engine lock.
+- **Bypass Terminal Buffers:** If terminal output seems stale or repetitive, explicitly read the target files (e.g., generated type definitions, schemas) to verify the actual state of the codebase.
+
+---
+
+## 5. STANDARD EXECUTION PROTOCOL (Mandatory Workflow)
+For every task, defect, or feature request, you MUST execute your response in the following structured sequence:
+
+1. **Analyze:** Assess the requirement or defect. Read the relevant files. Identify cross-application impacts (e.g., does changing this DB model require updating the Web-Admin AND Web-Portal?).
+2. **Design/Root Cause:** Propose the architectural design or explicitly state the root cause of the bug before writing any code.
+3. **Code:** Write the code adhering to the Enterprise-grade, multi-tenant SaaS standards listed above.
+4. **Compile:** Run compilation checks (e.g., `npx tsc --noEmit`) to guarantee zero TypeScript errors.
+5. **Test/Verify:** Verify end-to-end data flow from the UI component -> BFF Route -> NestJS Service -> Prisma DB.
+6. **Report:** Provide a concise summary report confirming the completion of the task, listing the exact files modified, and noting any required manual steps for the user (e.g., "Run `db push`").

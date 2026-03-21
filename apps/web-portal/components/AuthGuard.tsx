@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { getMeClaims, getToken, type UserClaims } from '../lib/auth';
+import { forceLogout, getMeClaims, getToken, isTokenExpired, type UserClaims } from '../lib/auth';
 
 export function AuthGuard({
   children,
@@ -12,14 +12,19 @@ export function AuthGuard({
   const [claims, setClaims] = useState<UserClaims | null>(null);
 
   useEffect(() => {
-    if (!getToken()) {
-      window.location.href = '/login';
+    const token = getToken();
+
+    // [SEC-AUTH-007] Reject expired tokens immediately — before any network
+    // call.  This eliminates the ghost-state on hard page load with a stale
+    // token still in localStorage.
+    if (!token || isTokenExpired(token)) {
+      forceLogout();
       return;
     }
 
     void getMeClaims().then((result) => {
       if (!result) {
-        window.location.href = '/login';
+        // getMeClaims already called forceLogout() internally.
         return;
       }
 

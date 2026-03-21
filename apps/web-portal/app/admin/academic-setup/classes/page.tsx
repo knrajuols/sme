@@ -390,11 +390,11 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
     setSeeding(true);
     setErrorMsg('');
     try {
-      await bffFetch<{ seeded: number }>('/api/academic-setup/classes/seed', { method: 'POST' });
-      setSuccessMsg('✨ 12 classes (Class 1 – Class 12) generated successfully.');
+      await bffFetch<{ seeded: number }>('/api/academic-setup/classes/seed-from-master', { method: 'POST' });
+      setSuccessMsg('✅ Classes generated from master template.');
       await fetchClasses();
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Failed to generate sample classes');
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to generate classes from master template');
     } finally {
       setSeeding(false);
       setTimeout(() => setSuccessMsg(''), 4000);
@@ -502,7 +502,7 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
                   Generating&hellip;
                 </>
               ) : (
-                <>✨ Generate Sample Data</>
+                <>✅ Generate from Master Data</>
               )}
             </button>
           )}

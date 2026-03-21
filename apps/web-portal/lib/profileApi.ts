@@ -10,7 +10,7 @@
  *   [ERR-SCH-PROF-5002]  PATCH update failure
  */
 
-import { getToken } from './auth';
+import { forceLogout, getToken } from './auth';
 
 // ── Typed API error ───────────────────────────────────────────────────────────
 export class ProfileApiError extends Error {
@@ -47,6 +47,8 @@ async function callProfile<T>(method: 'GET' | 'PATCH', payload?: Record<string, 
   const res = await fetch('/api/school/profile', init);
 
   if (res.status === 401) {
+    // [SEC-AUTH-006] Profile 401 — always a dead session; tear it down.
+    forceLogout();
     throw new ProfileApiError('Unauthorized', 401);
   }
 

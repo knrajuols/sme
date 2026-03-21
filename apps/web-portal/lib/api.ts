@@ -1,4 +1,4 @@
-import { getToken, logout } from './auth';
+import { forceLogout, getToken } from './auth';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
 
@@ -46,10 +46,8 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   });
 
   if (response.status === 401) {
-    logout();
-    if (typeof window !== 'undefined') {
-      window.location.href = '/login';
-    }
+    // [SEC-AUTH-004] Token rejected by backend — wipe session and redirect.
+    forceLogout();
     throw new Error('Unauthorized');
   }
 
@@ -77,6 +75,15 @@ export async function bffFetch<T>(url: string, opts?: RequestInit): Promise<T> {
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const res = await fetch(url, { ...opts, headers });
+
+  // [SEC-AUTH-005] BFF 401 interceptor — mirrors the apiRequest() guard.
+  // Fires when the JWT has expired mid-session and the Next.js BFF layer
+  // returns 401 before the response body is even parsed.
+  if (res.status === 401) {
+    forceLogout();
+    throw new Error('Unauthorized');
+  }
+
   const body: unknown = await res.json().catch(() => ({}));
 
   if (!res.ok) {

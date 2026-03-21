@@ -10,6 +10,8 @@ interface TokenInput {
   roles: string[];
   permissions?: string[];
   sessionId: string;
+  /** Login email — embedded in token for UI display only. */
+  email?: string;
   expiresInSeconds?: number;
 }
 
@@ -31,6 +33,7 @@ export class JwtTokenService {
       roles: input.roles,
       permissions: input.permissions ?? [],
       sessionId: input.sessionId,
+      ...(input.email ? { email: input.email } : {}),
       iat: issuedAt,
       exp: issuedAt + expiresIn,
     };

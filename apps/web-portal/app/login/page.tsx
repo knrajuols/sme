@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 
 import { decodeTokenClaims, login } from '../../lib/auth';
 import { PremiumCard } from '../../components/ui/PremiumCard';
@@ -15,6 +15,13 @@ interface GateState {
   showPassword: boolean;
   loading: boolean;
   error: string;
+}
+
+/** Shape returned by the public branding BFF route. */
+interface TenantBranding {
+  schoolName: string;
+  tenantCode: string;
+  logoUrl: string | null;
 }
 
 // ── Announcements data ────────────────────────────────────────────────────────
@@ -35,6 +42,42 @@ const ANNOUNCEMENTS = [
     text: 'Annual Sports Day registrations are open. Last date: 20 Mar 2026.',
   },
 ] as const;
+
+// ── Subdomain helpers ─────────────────────────────────────────────────────────
+
+/**
+ * [PUB-BRAND-003] Extract the first subdomain segment from the current hostname.
+ * MUST only be called after the component has mounted (inside useEffect) —
+ * never at render time or module scope, as `window` is undefined on the server.
+ * Examples:
+ *   ammulu.sme.test  → 'ammulu'
+ *   localhost        → null   (no subdomain)
+ *   sme.test         → null   (root domain, no subdomain)
+ */
+function extractTenantCode(): string | null {
+  const parts = window.location.hostname.split('.');
+  // Require at least 3 parts (sub.domain.tld) to have a genuine subdomain.
+  if (parts.length < 3) return null;
+  return parts[0] ?? null;
+}
+
+/**
+ * [PUB-BRAND-004] Fetch branding data for a tenantCode from the public BFF.
+ * Returns null on any failure so the caller can fall back gracefully.
+ */
+async function fetchTenantBranding(code: string): Promise<TenantBranding | null> {
+  try {
+    const res = await fetch(`/api/tenant/branding/${encodeURIComponent(code)}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const body = (await res.json()) as TenantBranding & { notFound?: boolean };
+    if (body.notFound) return null;
+    return body;
+  } catch {
+    return null;
+  }
+}
 
 // ── Login Gate Form ───────────────────────────────────────────────────────────
 function LoginGate({
@@ -168,6 +211,38 @@ function LoginGate({
 
 // ── Page ──────────────────────────────────────────────────────────────────────
 export default function LoginPage() {
+  // [PUB-BRAND-005] Hydration-safe branding state.
+  //
+  // Pattern: `mounted` starts false on BOTH server and client initial render so
+  // the JSX produced by SSR and the first client render are IDENTICAL (both show
+  // the static fallback heading).  React hydrates without a text mismatch.
+  // Only after the component has mounted on the client does useEffect fire,
+  // access window.location, and optionally fetch branding from the BFF.
+  const [mounted, setMounted]     = useState(false);
+  const [branding, setBranding]   = useState<TenantBranding | null>(null);
+
+  useEffect(() => {
+    // Mark the component as client-side mounted — this is the earliest safe
+    // point to access browser-native objects like window.location.
+    setMounted(true);
+
+    let cancelled = false;
+    const code = extractTenantCode();
+    if (!code) return; // Root domain / localhost — keep generic heading.
+
+    fetchTenantBranding(code).then((result) => {
+      if (!cancelled) setBranding(result);
+    });
+
+    return () => { cancelled = true; };
+  }, []);
+
+  // Static fallback shown on server + during hydration (SSR-safe).
+  // After mount: replaced with the fetched school name when available.
+  const headingName = mounted && branding?.schoolName
+    ? branding.schoolName
+    : 'Your School';
+
   return (
     <main className="min-h-screen bg-slate-50 flex flex-col">
 
@@ -178,8 +253,14 @@ export default function LoginPage() {
           <span className="text-4xl">🏫</span>
         </div>
         <h1 className="text-3xl md:text-4xl font-extrabold text-slate-900 mb-2">
-          Welcome to <span className="text-blue-600">Your School</span>
+          Welcome to&nbsp;
+          <span className="text-blue-600">{headingName}</span>
         </h1>
+        {branding?.tenantCode && (
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-1">
+            {branding.tenantCode}
+          </p>
+        )}
         <p className="text-slate-500 text-base">Please select your portal to continue.</p>
       </header>
 

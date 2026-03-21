@@ -1,7 +1,4 @@
 {
-  "/login/page": "app/login/page.js",
-  "/exams/page": "app/exams/page.js",
-  "/api/web-admin/academic-years/route": "app/api/web-admin/academic-years/route.js",
-  "/dashboard/page": "app/dashboard/page.js",
-  "/api/web-admin/exam-schedules/route": "app/api/web-admin/exam-schedules/route.js"
+  "/page": "app/page.js",
+  "/login/page": "app/login/page.js"
 }

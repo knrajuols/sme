@@ -230,9 +230,23 @@ model Tenant {
   feeStructures           FeeStructure[]
   feeInvoices             FeeInvoice[]
   feePayments             FeePayment[]
+  classSections           ClassSection[]
   classTimetables         ClassTimetable[]
-  timeTableEntries         TimeTableEntry[]
+  timeTableEntries        TimeTableEntry[]
   examSchedules           ExamSchedule[]
+  examSectionLocks        ExamSectionLock[]
+  attendanceLogs          AttendanceLog[]
+  calendarEntries         AcademicCalendarEntry[]
+  weekendConfigs          WeekendConfig[]
+  holidayMatrixRules      HolidayMatrixRule[]
+  holidayEntries          HolidayEntry[]
+  // Transport Module
+  drivers                 Driver[]
+  attendants              Attendant[]
+  vehicles                Vehicle[]
+  stops                   Stop[]
+  transportRoutes         TransportRoute[]
+  TransportAllocation     TransportAllocation[]
 }
 
 // key is now sized; FK added — no orphan settings survive tenant deletion.
@@ -284,15 +298,21 @@ model AcademicYear {
   // FK-enforced tenant isolation — every academic year belongs to exactly one tenant.
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
-  classes            Class[]
-  studentEnrollments StudentEnrollment[]
-  periods            Period[]
-  attendanceSessions AttendanceSession[]
-  exams              Exam[]
-  feeStructures      FeeStructure[]
-  classTimetables    ClassTimetable[]
-  timeTableEntries   TimeTableEntry[]
-  examSchedules      ExamSchedule[]
+  classes              Class[]
+  studentEnrollments   StudentEnrollment[]
+  periods              Period[]
+  attendanceSessions   AttendanceSession[]
+  attendanceLogs       AttendanceLog[]
+  exams                Exam[]
+  feeStructures        FeeStructure[]
+  classTimetables      ClassTimetable[]
+  timeTableEntries     TimeTableEntry[]
+  examSchedules        ExamSchedule[]
+  calendarEntries      AcademicCalendarEntry[]
+  weekendConfigs       WeekendConfig[]
+  holidayMatrixRules   HolidayMatrixRule[]
+  holidayEntries       HolidayEntry[]
+  transportAllocations TransportAllocation[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -317,9 +337,11 @@ model Class {
   tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear       AcademicYear             @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   sections           Section[]
+  classSections      ClassSection[]
   assignments        ClassTeacherAssignment[]
   enrollments        StudentEnrollment[]
   attendanceSessions AttendanceSession[]
+  attendanceLogs     AttendanceLog[]
   exams              Exam[]
   classAggregates    ClassExamAggregate[]
   classTimetables    ClassTimetable[]
@@ -360,18 +382,50 @@ model Section {
   tenant             Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   // Optional: sections in the global pool have no class assignment
   class              Class?                   @relation(fields: [classId], references: [id], onDelete: Restrict)
+  classSections      ClassSection[]
   assignments        ClassTeacherAssignment[]
   enrollments        StudentEnrollment[]
   attendanceSessions AttendanceSession[]
+  attendanceLogs     AttendanceLog[]
   classTimetables    ClassTimetable[]
   timeTableEntries   TimeTableEntry[]
+  examSectionLocks   ExamSectionLock[]
 
-  // classId may be NULL (pool sections); PostgreSQL treats NULLs as distinct in unique indexes
-  @@unique([tenantId, classId, name])
+  // Section names are unique per tenant — sections are independent master templates
+  @@unique([tenantId, name])
   @@index([tenantId])
   @@index([classId])
   // AI ADDED: Class teacher lookup for section header queries
   @@index([classTeacherId])
+}
+
+// Junction: assigns a pool Section to a Class with a unique display name (e.g. "10-A").
+// Constraint: same section cannot be assigned twice to the same class.
+model ClassSection {
+  id        String @id @default(uuid())
+  tenantId  String @db.VarChar(50)
+  classId   String
+  sectionId String
+  // Display name shown in student forms and reports (e.g. "10-A", "5-Ganga")
+  name      String @db.VarChar(100)
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  class   Class   @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+
+  // Prevent duplicate assignment of the same section to the same class
+  @@unique([tenantId, classId, sectionId])
+  // Display name must be unique within a tenant
+  @@unique([tenantId, name])
+  @@index([tenantId])
+  @@index([classId])
+  @@index([sectionId])
 }
 
 // code = subject code e.g. "MATH" — unique within tenant.
@@ -399,7 +453,7 @@ model Subject {
   countForRank      Boolean @default(true)
 
   // Admin toggle — INACTIVE hides the subject from active views without destroying data
-  status     SubjectStatus @default(ACTIVE)
+  status SubjectStatus @default(ACTIVE)
 
   createdBy  String?  @db.VarChar(50)
   updatedBy  String?  @db.VarChar(50)
@@ -486,12 +540,12 @@ model Teacher {
   updatedAt  DateTime @updatedAt
 
   // FK-enforced tenant isolation — every teacher belongs to exactly one tenant.
-  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  assignments     ClassTeacherAssignment[]
+  tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  assignments      ClassTeacherAssignment[]
   // AI ADDED: Sections where this teacher is designated class teacher
-  classSections   Section[]
+  classSections    Section[]
   // M2M: explicit join table preserves tenant isolation in the relationship itself.
-  teacherSubjects TeacherSubject[]
+  teacherSubjects  TeacherSubject[]
   classTimetables  ClassTimetable[]
   timeTableEntries TimeTableEntry[]
 
@@ -513,7 +567,8 @@ model Student {
   // ── Personal Identity ─────────────────────────────────────────────────────
   firstName       String     @db.VarChar(100)
   middleName      String?    @db.VarChar(100)
-  lastName        String     @db.VarChar(100)
+  // Issue-222: lastName is culturally optional (e.g., single-name students in South India)
+  lastName        String?    @db.VarChar(100)
   // AI ADDED: Preferred name for display; used in report cards and portal
   preferredName   String?    @db.VarChar(100)
   // Progressive profiling: can be filled by parent after initial enrollment
@@ -523,7 +578,8 @@ model Student {
   // AI ADDED: Free-text gender identity field for inclusive platforms
   preferredGender String?    @db.VarChar(50)
   bloodGroup      BloodGroup @default(UNKNOWN)
-  motherTongue    String?    @db.VarChar(50)
+  // Issue-230: Made non-nullable with empty-string default for migration safety
+  motherTongue    String     @default("") @db.VarChar(50)
   // AI ADDED: Nationality — defaults to Indian; needed for PIO/NRI student records
   nationality     String     @default("Indian") @db.VarChar(50)
 
@@ -586,15 +642,16 @@ model Student {
   updatedAt  DateTime @updatedAt
 
   // FK-enforced tenant isolation — every student belongs to exactly one tenant.
-  tenant            Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  enrollments       StudentEnrollment[]
-  attendanceRecords AttendanceRecord[]
-  studentMarks      StudentMark[]
-  examResults       StudentExamResult[]
-  examAggregates    StudentExamAggregate[]
-  parentMappings    ParentStudentMapping[]
-  feeInvoices       FeeInvoice[]
-  feePayments       FeePayment[]
+  tenant               Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  enrollments          StudentEnrollment[]
+  attendanceRecords    AttendanceRecord[]
+  studentMarks         StudentMark[]
+  examResults          StudentExamResult[]
+  examAggregates       StudentExamAggregate[]
+  parentMappings       ParentStudentMapping[]
+  feeInvoices          FeeInvoice[]
+  feePayments          FeePayment[]
+  transportAllocations TransportAllocation[]
 
   @@unique([tenantId, admissionNumber])
   // AI ADDED: APAAR uniqueness enforced at DB level
@@ -636,9 +693,11 @@ model StudentEnrollment {
   tenantId       String   @db.VarChar(50)
   studentId      String
   classId        String
-  sectionId      String
+  // Issue-231: sectionId made optional — not all schools use sections
+  sectionId      String?
   academicYearId String
-  rollNumber     String   @db.VarChar(20)
+  // Issue-231: rollNumber made optional — can be assigned after initial enrollment
+  rollNumber     String?  @db.VarChar(20)
   createdBy      String?  @db.VarChar(50)
   updatedBy      String?  @db.VarChar(50)
   softDelete     Boolean  @default(false)
@@ -649,7 +708,7 @@ model StudentEnrollment {
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   student      Student      @relation(fields: [studentId], references: [id], onDelete: Restrict)
   class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
-  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  section      Section?     @relation(fields: [sectionId], references: [id], onDelete: Restrict)
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, studentId, academicYearId])
@@ -666,18 +725,21 @@ model Parent {
   userId   String @db.VarChar(50)
 
   // ── Personal Identity ─────────────────────────────────────────────────────
-  firstName String   @db.VarChar(100)
-  lastName  String   @db.VarChar(100)
-  // Default of GUARDIAN covers the most common case; can be updated during profile completion
-  relation  Relation @default(GUARDIAN)
-  gender    Gender   @default(PREFER_NOT_TO_SAY)
+  firstName String    @db.VarChar(100)
+  // Issue-222: lastName is culturally optional
+  lastName  String?   @db.VarChar(100)
+  // Issue-230: Made nullable — relation is optional in the UI; omitting sends no value and DB uses GUARDIAN default
+  relation  Relation? @default(GUARDIAN)
+  gender    Gender    @default(PREFER_NOT_TO_SAY)
 
   // ── Contact ───────────────────────────────────────────────────────────────
-  phone          String? @db.VarChar(20)
+  // Issue-230: Made non-nullable with empty-string default (phone is mandatory in UI)
+  phone          String  @default("") @db.VarChar(20)
   // AI ADDED: Alternate phone — critical for emergency contact chains
   alternatePhone String? @db.VarChar(20)
   email          String? @db.VarChar(255)
-  motherTongue   String? @db.VarChar(50)
+  // Issue-230: Made non-nullable with empty-string default for migration safety
+  motherTongue   String  @default("") @db.VarChar(50)
   // AI ADDED: Comma-separated list of languages — used for parent communication preferences
   knownLanguages String? @db.VarChar(200)
 
@@ -720,6 +782,8 @@ model ParentStudentMapping {
   tenantId   String   @db.VarChar(50)
   parentId   String
   studentId  String
+  // Issue-225: Per-mapping relation — e.g., same person can be Father for one child, Guardian for another
+  relation   Relation @default(GUARDIAN)
   createdBy  String?  @db.VarChar(50)
   updatedBy  String?  @db.VarChar(50)
   softDelete Boolean  @default(false)
@@ -768,7 +832,7 @@ model Period {
   name           String   @db.VarChar(50)
   startTime      String   @db.VarChar(5) // e.g. "09:15" (24-hr HH:MM)
   endTime        String   @db.VarChar(5) // e.g. "10:00" (24-hr HH:MM)
-  orderIndex     Int      @default(0)    // position in the daily schedule (1-based for seeded rows)
+  orderIndex     Int      @default(0) // position in the daily schedule (1-based for seeded rows)
   academicYearId String?  @db.VarChar(50)
   createdBy      String?  @db.VarChar(50)
   updatedBy      String?  @db.VarChar(50)
@@ -777,14 +841,44 @@ model Period {
   updatedAt      DateTime @updatedAt
 
   // FK-enforced tenant isolation — every period belongs to exactly one tenant.
-  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  academicYear    AcademicYear?   @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  tenant           Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear     AcademicYear?    @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
   classTimetables  ClassTimetable[]
   timeTableEntries TimeTableEntry[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
   @@index([tenantId, orderIndex])
+}
+
+// ── Event-Blob Attendance Log (One-Row-Per-Class-Per-Day) ──────────────────────
+// High-performance daily attendance with student + teacher data in a single TEXT blob.
+// Blob format: { students: { "<studentId>": { s: "P"|"A"|"L"|"E", r?: "remark" } },
+//                teachers: { "<teacherId>": { s: "P"|"A"|"L", in?: "HH:mm", out?: "HH:mm" } } }
+model AttendanceLog {
+  id             String   @id @default(uuid())
+  tenantId       String   @db.VarChar(50)
+  date           DateTime @db.Date
+  classId        String
+  sectionId      String
+  academicYearId String
+  attendanceBlob String   @db.Text // JSON string of all student + teacher attendance
+  status         Int      @default(0) // 0 = Draft, 1 = Locked
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
+  softDelete     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Restrict)
+  section      Section      @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, date, classId, sectionId])
+  @@index([tenantId])
+  @@index([date])
+  @@index([tenantId, classId, date])
 }
 
 model AttendanceSession {
@@ -866,6 +960,7 @@ model Exam {
   studentAggregates StudentExamAggregate[]
   classAggregates   ClassExamAggregate[]
   subjectAnalytics  SubjectExamAnalytics[]
+  sectionLocks      ExamSectionLock[]
 
   @@unique([tenantId, name, academicYearId, classId])
   @@index([tenantId])
@@ -906,6 +1001,7 @@ model StudentMark {
   subjectId     String
   studentId     String
   marksObtained Float
+  isAbsent      Boolean  @default(false)
   remarks       String?  @db.VarChar(500)
   createdBy     String?  @db.VarChar(50)
   updatedBy     String?  @db.VarChar(50)
@@ -930,17 +1026,19 @@ model StudentMark {
 }
 
 model GradeScale {
-  id            String   @id @default(uuid())
-  tenantId      String   @db.VarChar(50)
-  name          String   @db.VarChar(100)
-  minPercentage Float
-  maxPercentage Float
-  grade         String   @db.VarChar(10)
-  createdBy     String?  @db.VarChar(50)
-  updatedBy     String?  @db.VarChar(50)
-  softDelete    Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                   String   @id @default(uuid())
+  tenantId             String   @db.VarChar(50)
+  name                 String   @db.VarChar(100)
+  minPercentage        Float
+  maxPercentage        Float
+  grade                String   @db.VarChar(10)
+  gradePoint           Float    @default(0)
+  performanceIndicator String   @default("") @db.VarChar(100)
+  createdBy            String?  @db.VarChar(50)
+  updatedBy            String?  @db.VarChar(50)
+  softDelete           Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
 
   // FK-enforced tenant isolation — every grade scale belongs to exactly one tenant.
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
@@ -1094,6 +1192,7 @@ model FeeCategory {
   tenantId    String   @db.VarChar(50)
   name        String   @db.VarChar(200)
   description String?  @db.VarChar(500)
+  parentId    String? // null = top-level category; non-null = line-item under a category
   createdBy   String?  @db.VarChar(50)
   updatedBy   String?  @db.VarChar(50)
   softDelete  Boolean  @default(false)
@@ -1101,25 +1200,28 @@ model FeeCategory {
   updatedAt   DateTime @updatedAt
 
   tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent        FeeCategory?   @relation("CategoryChildren", fields: [parentId], references: [id])
+  children      FeeCategory[]  @relation("CategoryChildren")
   feeStructures FeeStructure[]
 
-  @@unique([tenantId, name])
+  @@unique([tenantId, parentId, name])
   @@index([tenantId])
+  @@index([parentId])
 }
 
 model FeeStructure {
-  id             String   @id @default(uuid())
-  tenantId       String   @db.VarChar(50)
+  id             String    @id @default(uuid())
+  tenantId       String    @db.VarChar(50)
   academicYearId String
   classId        String
   feeCategoryId  String
-  amount         Float
-  dueDate        DateTime @db.Date
-  createdBy      String?  @db.VarChar(50)
-  updatedBy      String?  @db.VarChar(50)
-  softDelete     Boolean  @default(false)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  amount         Decimal?  @db.Decimal(12, 2)
+  dueDate        DateTime? @db.Date
+  createdBy      String?   @db.VarChar(50)
+  updatedBy      String?   @db.VarChar(50)
+  softDelete     Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
@@ -1138,8 +1240,8 @@ model FeeInvoice {
   tenantId       String   @db.VarChar(50)
   studentId      String
   feeStructureId String
-  amountDue      Float
-  amountPaid     Float    @default(0)
+  amountDue      Decimal  @db.Decimal(12, 2)
+  amountPaid     Decimal  @default(0) @db.Decimal(12, 2)
   // PENDING | PARTIAL | PAID | OVERDUE | WAIVED
   status         String   @db.VarChar(20)
   dueDate        DateTime @db.Date
@@ -1165,7 +1267,7 @@ model FeePayment {
   tenantId        String   @db.VarChar(50)
   invoiceId       String
   studentId       String
-  amount          Float
+  amount          Decimal  @db.Decimal(12, 2)
   paymentDate     DateTime @db.Date
   // CASH | ONLINE | CHEQUE | DD | UPI
   paymentMethod   String   @db.VarChar(30)
@@ -1239,13 +1341,13 @@ model TimeTableEntry {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  tenant       Tenant       @relation(fields: [tenantId],       references: [id], onDelete: Cascade)
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Cascade)
-  class        Class        @relation(fields: [classId],        references: [id], onDelete: Cascade)
-  section      Section?     @relation(fields: [sectionId],      references: [id], onDelete: Cascade)
-  period       Period       @relation(fields: [periodId],       references: [id], onDelete: Cascade)
-  subject      Subject?     @relation(fields: [subjectId],      references: [id], onDelete: SetNull)
-  teacher      Teacher?     @relation(fields: [teacherId],      references: [id], onDelete: SetNull)
+  class        Class        @relation(fields: [classId], references: [id], onDelete: Cascade)
+  section      Section?     @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  period       Period       @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  subject      Subject?     @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  teacher      Teacher?     @relation(fields: [teacherId], references: [id], onDelete: SetNull)
 
   @@unique([tenantId, academicYearId, classId, sectionId, periodId])
   @@index([tenantId])
@@ -1261,24 +1363,412 @@ model TimeTableEntry {
 // call POST /exam-schedules/generate-from-master, which writes new rows with the
 // school's tenantId and their chosen academicYearId.
 model ExamSchedule {
-  id             String    @id @default(uuid())
-  tenantId       String    @db.VarChar(50)
-  name           String    @db.VarChar(200)
-  academicYearId String?   @db.VarChar(50)
-  targetClasses  String    @default("ALL") @db.VarChar(200)
-  startDate      DateTime  @db.Date
-  endDate        DateTime  @db.Date
-  softDelete     Boolean   @default(false)
-  createdBy      String?   @db.VarChar(50)
-  updatedBy      String?   @db.VarChar(50)
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id             String   @id @default(uuid())
+  tenantId       String   @db.VarChar(50)
+  name           String   @db.VarChar(200)
+  academicYearId String?  @db.VarChar(50)
+  targetClasses  String   @default("ALL") @db.VarChar(200)
+  startDate      DateTime @db.Date
+  endDate        DateTime @db.Date
+  softDelete     Boolean  @default(false)
+  createdBy      String?  @db.VarChar(50)
+  updatedBy      String?  @db.VarChar(50)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // FK-enforced tenant isolation — MASTER_TEMPLATE is a reserved Tenant row.
-  tenant       Tenant        @relation(fields: [tenantId],       references: [id], onDelete: Cascade)
+  tenant       Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   academicYear AcademicYear? @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
 
   @@unique([tenantId, academicYearId, name])
   @@index([tenantId])
   @@index([tenantId, academicYearId])
+}
+
+// ─── ExamSectionLock ─────────────────────────────────────────────────────────
+// Tracks whether attendance has been locked for a given exam + section.
+// Once locked, the absent checkboxes on the Marks Entry page become read-only
+// and the lock state is persisted to prevent tampering.
+model ExamSectionLock {
+  id        String    @id @default(uuid())
+  tenantId  String    @db.VarChar(50)
+  examId    String
+  sectionId String
+  locked    Boolean   @default(false)
+  lockedBy  String?   @db.VarChar(50)
+  lockedAt  DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  // FK-enforced tenant isolation.
+  tenant  Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  exam    Exam    @relation(fields: [examId], references: [id], onDelete: Restrict)
+  section Section @relation(fields: [sectionId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, examId, sectionId])
+  @@index([tenantId])
+  @@index([examId])
+}
+
+// ─── Academic Calendar ───────────────────────────────────────────────────────
+// Stores calendar entries (holidays, exams, events, vacations) for an academic year.
+// Entries are uploaded via CSV in web-admin (MASTER_TEMPLATE) and copied to tenants.
+
+enum CalendarEntryType {
+  Academic
+  Holiday
+  Vacation_Start
+  Vacation_End
+  Exam
+  Exam_Start
+  Exam_End
+  Event
+  Celebration
+}
+
+model AcademicCalendarEntry {
+  id             String            @id @default(uuid())
+  tenantId       String            @db.VarChar(50)
+  academicYearId String
+  slNo           Int
+  date           DateTime          @db.Date
+  title          String            @db.VarChar(500)
+  type           CalendarEntryType
+  isWorkingDay   Boolean           @default(true)
+  createdBy      String?           @db.VarChar(50)
+  updatedBy      String?           @db.VarChar(50)
+  softDelete     Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, slNo])
+  @@index([tenantId])
+  @@index([tenantId, academicYearId])
+}
+
+// ─── Holiday Engine ─────────────────────────────────────────────────────────
+// Weekend & Monthly-Matrix configuration plus the generated holiday list
+// consumed by the Attendance Module.
+
+// Stores which days of the week are recurring weekend holidays.
+// One row per (tenant, academicYear, dayOfWeek).
+model WeekendConfig {
+  id             String    @id @default(uuid())
+  tenantId       String    @db.VarChar(50)
+  academicYearId String
+  dayOfWeek      DayOfWeek
+  isFullHoliday  Boolean   @default(false)
+  firstHalfOff   Boolean   @default(false)
+  secondHalfOff  Boolean   @default(false)
+  createdBy      String?   @db.VarChar(50)
+  updatedBy      String?   @db.VarChar(50)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, dayOfWeek])
+  @@index([tenantId])
+}
+
+// Monthly Holiday Matrix: "Nth occurrence of a weekday" policy.
+// E.g. 2nd Saturday = Full Holiday, other Saturdays = Second Half.
+model HolidayMatrixRule {
+  id             String    @id @default(uuid())
+  tenantId       String    @db.VarChar(50)
+  academicYearId String
+  dayOfWeek      DayOfWeek
+  occurrence     Int // 1–5 (1st, 2nd, 3rd, 4th, 5th occurrence in a month)
+  firstHalfOff   Boolean   @default(false)
+  secondHalfOff  Boolean   @default(false)
+  createdBy      String?   @db.VarChar(50)
+  updatedBy      String?   @db.VarChar(50)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, dayOfWeek, occurrence])
+  @@index([tenantId])
+}
+
+// Source of a generated holiday entry — used for idempotency logic.
+enum HolidaySource {
+  CALENDAR // Expanded from Academic Calendar (Holiday, Vacation range)
+  WEEKEND // From WeekendConfig (recurring weekend holiday)
+  MATRIX // From HolidayMatrixRule (Nth-day policy)
+  MANUAL // Manually added by admin (e.g. "Rainy Day")
+}
+
+// The day-wise holiday list consumed by the Attendance Module.
+model HolidayEntry {
+  id             String        @id @default(uuid())
+  tenantId       String        @db.VarChar(50)
+  academicYearId String
+  date           DateTime      @db.Date
+  occasion       String        @db.VarChar(500)
+  type           String        @db.VarChar(50) // Holiday, Vacation, Weekend, Half-Day, etc.
+  isFullDay      Boolean       @default(true)
+  isFirstHalf    Boolean       @default(false)
+  isSecondHalf   Boolean       @default(false)
+  source         HolidaySource @default(MANUAL)
+  isManual       Boolean       @default(false)
+  remarks        String?       @db.VarChar(500)
+  createdBy      String?       @db.VarChar(50)
+  updatedBy      String?       @db.VarChar(50)
+  softDelete     Boolean       @default(false)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  academicYear AcademicYear @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, academicYearId, date])
+  @@index([tenantId])
+  @@index([tenantId, academicYearId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══  TRANSPORT MODULE  ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Transport Staff ────────────────────────────────────────────────────────
+
+model Driver {
+  id                       String    @id @default(uuid())
+  tenantId                 String    @db.VarChar(50)
+  name                     String    @db.VarChar(200)
+  mobile                   String    @db.VarChar(20)
+  licenseNumber            String    @db.VarChar(50)
+  licenseExpiry            DateTime
+  badgeNumber              String?   @db.VarChar(50)
+  badgeExpiry              DateTime?
+  policeVerificationStatus String?   @db.VarChar(30) // Verified, Pending
+  isActive                 Boolean   @default(true)
+  deletedAt                DateTime?
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trips  RouteTrip[]
+
+  @@unique([tenantId, licenseNumber])
+  @@index([tenantId])
+}
+
+model Attendant {
+  id                       String    @id @default(uuid())
+  tenantId                 String    @db.VarChar(50)
+  name                     String    @db.VarChar(200)
+  mobile                   String    @db.VarChar(20)
+  policeVerificationStatus String?   @db.VarChar(30)
+  isActive                 Boolean   @default(true)
+  deletedAt                DateTime?
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trips  RouteTrip[]
+
+  @@index([tenantId])
+}
+
+// ─── Fleet Management ───────────────────────────────────────────────────────
+
+model Vehicle {
+  id             String @id @default(uuid())
+  tenantId       String @db.VarChar(50)
+  registrationNo String @db.VarChar(30)
+  vehicleType    String @db.VarChar(50) // Bus, Minivan, Winger
+  capacity       Int
+
+  // Compliance & Legal
+  fitnessCertificateNo String?   @db.VarChar(100)
+  fitnessExpiryDate    DateTime?
+  insurancePolicyNo    String?   @db.VarChar(100)
+  insuranceExpiryDate  DateTime?
+  pucCertificateNo     String?   @db.VarChar(100)
+  pucExpiryDate        DateTime?
+  permitNo             String?   @db.VarChar(100)
+  permitExpiryDate     DateTime?
+
+  // Maintenance & Safety
+  lastServiceDate           DateTime?
+  nextServiceDue            DateTime?
+  odometerReading           Int?
+  gpsDeviceId               String?   @db.VarChar(100)
+  cctvInstalled             Boolean   @default(false)
+  fireExtinguisherAvailable Boolean   @default(false)
+  firstAidAvailable         Boolean   @default(false)
+
+  isActive  Boolean   @default(true)
+  deletedAt DateTime?
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trips  RouteTrip[]
+
+  @@unique([tenantId, registrationNo])
+  @@index([tenantId])
+}
+
+// ─── Route Geography ────────────────────────────────────────────────────────
+
+model Stop {
+  id        String  @id @default(uuid())
+  tenantId  String  @db.VarChar(50)
+  name      String  @db.VarChar(200)
+  landmark  String? @db.VarChar(300)
+  latitude  Float?
+  longitude Float?
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  routeStops RouteStop[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+// ─── Routes, Trips & Stops ──────────────────────────────────────────────────
+
+model TransportRoute {
+  id          String  @id @default(uuid())
+  tenantId    String  @db.VarChar(50)
+  code        String  @db.VarChar(20) // e.g. R-01, R-02
+  name        String  @db.VarChar(200)
+  description String? @db.VarChar(500)
+  isActive    Boolean @default(true)
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant               Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  trips                RouteTrip[]
+  stops                RouteStop[]
+  transportAllocations TransportAllocation[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model RouteTrip {
+  id          String  @id @default(uuid())
+  tenantId    String  @db.VarChar(50)
+  routeId     String
+  tripType    String  @db.VarChar(20) // MORNING, EVENING
+  startTime   String  @db.VarChar(5) // HH:mm
+  endTime     String  @db.VarChar(5) // HH:mm
+  vehicleId   String?
+  driverId    String?
+  attendantId String?
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  route     TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  vehicle   Vehicle?       @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  driver    Driver?        @relation(fields: [driverId], references: [id], onDelete: SetNull)
+  attendant Attendant?     @relation(fields: [attendantId], references: [id], onDelete: SetNull)
+
+  pickupAllocations TransportAllocation[] @relation("PickupTrip")
+  dropAllocations   TransportAllocation[] @relation("DropTrip")
+
+  @@index([tenantId])
+  @@index([routeId])
+}
+
+model RouteStop {
+  id         String  @id @default(uuid())
+  tenantId   String  @db.VarChar(50)
+  routeId    String
+  stopId     String
+  sequence   Int
+  distanceKm Float? // Distance from origin/previous stop
+  pickupTime String? @db.VarChar(5) // HH:mm
+  dropTime   String? @db.VarChar(5) // HH:mm
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  route TransportRoute @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  stop  Stop           @relation(fields: [stopId], references: [id], onDelete: Restrict)
+
+  pickupAllocations TransportAllocation[] @relation("PickupStop")
+  dropAllocations   TransportAllocation[] @relation("DropStop")
+
+  @@unique([routeId, stopId])
+  @@unique([routeId, sequence])
+  @@index([tenantId])
+  @@index([routeId])
+}
+
+// ─── Student Transport Allocation ───────────────────────────────────────────
+
+model TransportAllocation {
+  id             String    @id @default(uuid())
+  tenantId       String    @db.VarChar(50)
+  studentId      String
+  academicYearId String
+  routeId        String
+  pickupTripId   String
+  pickupStopId   String
+  dropTripId     String
+  dropStopId     String
+  startDate      DateTime  @db.Date
+  endDate        DateTime? @db.Date
+  isActive       Boolean   @default(true)
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant       Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  student      Student        @relation(fields: [studentId], references: [id], onDelete: Restrict)
+  academicYear AcademicYear   @relation(fields: [academicYearId], references: [id], onDelete: Restrict)
+  route        TransportRoute @relation(fields: [routeId], references: [id], onDelete: Restrict)
+  pickupTrip   RouteTrip      @relation("PickupTrip", fields: [pickupTripId], references: [id], onDelete: Restrict)
+  pickupStop   RouteStop      @relation("PickupStop", fields: [pickupStopId], references: [id], onDelete: Restrict)
+  dropTrip     RouteTrip      @relation("DropTrip", fields: [dropTripId], references: [id], onDelete: Restrict)
+  dropStop     RouteStop      @relation("DropStop", fields: [dropStopId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, studentId, academicYearId])
+  @@index([tenantId])
+  @@index([routeId])
+  @@index([pickupTripId])
+  @@index([dropTripId])
 }

@@ -27,6 +27,28 @@ export class AppController {
     return this.appService.live();
   }
 
+  /**
+   * [PUB-BRAND-002] Public subdomain branding endpoint.
+   * Called by the pre-auth login page to resolve a tenantCode → school name.
+   * Marked @Public() — no JWT required.  Returns only non-sensitive display data.
+   * NOTE: Must be declared BEFORE the generic @Get(':code') route so NestJS
+   * first-match routing does not swallow '/branding/:code' as ':code = branding'.
+   */
+  @Public()
+  @Get('branding/:code')
+  @ApiOperation({ summary: 'Resolve tenant branding by tenantCode (public, pre-auth)' })
+  async getTenantBranding(
+    @Param('code') code: string,
+  ): Promise<{ schoolName: string; tenantCode: string; logoUrl: string | null } | { notFound: true }> {
+    const branding = await this.appService.getBrandingByCode(code);
+    if (!branding) {
+      // Return a typed not-found payload rather than throwing 404 so the login
+      // page can silently fall back to the generic heading without an error log.
+      return { notFound: true };
+    }
+    return branding;
+  }
+
   @Get(':code')
   @ApiOperation({ summary: 'Get tenant by code' })
   @Permissions('TENANT_CREATE')

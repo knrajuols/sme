@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { getMeClaims, getToken } from '../lib/auth';
+import { forceLogout, getMeClaims, getToken, isTokenExpired } from '../lib/auth';
 
 /**
  * Client-side route guard for /web-admin/* routes.
@@ -17,14 +17,17 @@ export function PlatformAdminGuard({ children }: { children: React.ReactNode }) 
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) {
-      window.location.href = '/login';
+    const token = getToken();
+
+    // [SEC-AUTH-009] Fast-path expiry check — mirrors AdminGuard pattern.
+    if (!token || isTokenExpired(token)) {
+      forceLogout();
       return;
     }
 
     void getMeClaims().then((claims) => {
       if (!claims) {
-        window.location.href = '/login';
+        // getMeClaims already called forceLogout() internally.
         return;
       }
 

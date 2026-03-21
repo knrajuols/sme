@@ -177,6 +177,7 @@ function FeeCategoriesPage({ user: _user }: { user: UserClaims }) {
   const [saving, setSaving]       = useState(false);
   const [deleting, setDeleting]   = useState<string | null>(null);
   const [banner, setBanner]       = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   function showBanner(type: 'success' | 'error', msg: string) {
     setBanner({ type, msg });
@@ -196,6 +197,23 @@ function FeeCategoriesPage({ user: _user }: { user: UserClaims }) {
   }
 
   useEffect(() => { loadAll(); }, []);
+
+  async function handleGenerateFromMaster() {
+    setGenerating(true);
+    try {
+      const result = await bffFetch<{ categoriesCreated: number; categoriesSkipped: number }>(
+        '/api/finance/generate-from-master',
+        { method: 'POST' },
+      );
+      const msg = `Generated ${result.categoriesCreated} categories (${result.categoriesSkipped} skipped).`;
+      showBanner('success', msg);
+      await loadAll();
+    } catch (e) {
+      showBanner('error', e instanceof Error ? e.message : 'Generation from master failed.');
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   function openCreate() { setEditing(null); setPanelOpen(true); }
   function openEdit(r: FeeCategory) { setEditing(r); setPanelOpen(true); }
@@ -254,12 +272,23 @@ function FeeCategoriesPage({ user: _user }: { user: UserClaims }) {
             Define the types of fees charged to students (e.g. Tuition, Transport, Library).
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 transition-colors"
-        >
-          + New Category
-        </button>
+        <div className="flex items-center gap-3">
+          {rows.length === 0 && !loading && (
+            <button
+              onClick={handleGenerateFromMaster}
+              disabled={generating}
+              className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-violet-700 disabled:opacity-50 transition-colors"
+            >
+              {generating ? 'Generating…' : 'Generate from Master Data'}
+            </button>
+          )}
+          <button
+            onClick={openCreate}
+            className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 transition-colors"
+          >
+            + New Category
+          </button>
+        </div>
       </div>
 
       {/* Banner */}

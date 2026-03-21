@@ -27,6 +27,10 @@ import { PortalController } from './portal.controller';
 import { PortalService } from './portal.service';
 import { TimetableController } from './timetable.controller';
 import { TimetableService } from './timetable.service';
+import { TransportController } from './transport.controller';
+import { TransportService } from './transport.service';
+import { TransportAllocationController } from './transport-allocation.controller';
+import { TransportAllocationService } from './transport-allocation.service';
 import { WebAdminController } from './web-admin.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { RabbitMqSetupService } from './rabbitmq-setup.service';
@@ -62,6 +66,8 @@ const appRoot = dirname(process.env.npm_package_json ?? join(process.cwd(), 'pac
     TimetableController,
     WebAdminController,
     ExamScheduleController,
+    TransportController,
+    TransportAllocationController,
   ],
   providers: [
     AppService,
@@ -74,6 +80,8 @@ const appRoot = dirname(process.env.npm_package_json ?? join(process.cwd(), 'pac
     PortalService,
     FinanceService,
     TimetableService,
+    TransportService,
+    TransportAllocationService,
   ],
 })
 export class AppModule {}

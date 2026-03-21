@@ -1,4 +1,4 @@
-import { ConflictException, ForbiddenException, Injectable } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, SchoolStatus, TenantStatus } from './generated/prisma-client';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
@@ -33,6 +33,8 @@ interface ReadinessResult {
 
 @Injectable()
 export class AppService {
+  private readonly logger = new Logger(AppService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -83,6 +85,38 @@ export class AppService {
 
   async getTenantByCode(code: string): Promise<{ code: string; status: string }> {
     return { code, status: 'available' };
+  }
+
+  /**
+   * [PUB-BRAND-001] Public branding resolution — accepts a tenantCode (subdomain)
+   * and returns minimal, non-sensitive branding data for the pre-auth login page.
+   * Deliberately omits tenantId and all configuration / financial fields.
+   */
+  async getBrandingByCode(
+    code: string,
+  ): Promise<{ schoolName: string; tenantCode: string; logoUrl: string | null } | null> {
+    try {
+      const rows = await this.prisma.$queryRaw<Array<{ name: string; code: string }>>`
+        SELECT "name", "code"
+        FROM "Tenant"
+        WHERE LOWER("code") = LOWER(${code})
+          AND "softDelete" = false
+        LIMIT 1
+      `;
+
+      const tenant = rows[0];
+      if (!tenant) return null;
+
+      return {
+        schoolName: tenant.name,
+        tenantCode: tenant.code,
+        logoUrl: null,
+      };
+    } catch (error) {
+      // [PUB-BRAND-001] Log the DB error but never expose internals on a public endpoint.
+      this.logger.error(`[PUB-BRAND-001] Branding lookup failed for code="${code}": ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
   }
 
   async getTenantStatusById(tenantId: string): Promise<{ tenantId: string; status: string }> {

@@ -1,5 +1,5 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsDateString, IsNumber, IsPositive, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsDateString, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
 
 export class CreateFeeStructureDto {
   @ApiProperty({ example: 'b11f3e4e-2a28-44e2-8b81-400c8d98f241' })
@@ -14,12 +14,14 @@ export class CreateFeeStructureDto {
   @IsString()
   feeCategoryId!: string;
 
-  @ApiProperty({ example: 1500.0 })
+  @ApiPropertyOptional({ example: 1500.0 })
+  @IsOptional()
   @IsNumber()
   @IsPositive()
-  amount!: number;
+  amount?: number;
 
-  @ApiProperty({ example: '2025-04-10' })
+  @ApiPropertyOptional({ example: '2025-04-10' })
+  @IsOptional()
   @IsDateString()
-  dueDate!: string;
+  dueDate?: string;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { getMeClaims, getToken } from '../lib/auth';
+import { forceLogout, getMeClaims, getToken, isTokenExpired } from '../lib/auth';
 
 /**
  * Client-side route guard for all /admin/* routes.
@@ -21,14 +21,18 @@ export function AdminGuard({ children }: { children: React.ReactNode }) {
   const [authorized, setAuthorized] = useState(false);
 
   useEffect(() => {
-    if (!getToken()) {
-      window.location.href = '/login';
+    const token = getToken();
+
+    // [SEC-AUTH-008] Fast-path expiry check — prevents ghost state on stale
+    // tokens without needing a network round-trip.
+    if (!token || isTokenExpired(token)) {
+      forceLogout();
       return;
     }
 
     void getMeClaims().then((claims) => {
       if (!claims) {
-        window.location.href = '/login';
+        // getMeClaims already called forceLogout() internally.
         return;
       }
 

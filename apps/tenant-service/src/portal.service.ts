@@ -27,26 +27,26 @@ export interface FamilySummary {
   parent: {
     id: string;
     firstName: string;
-    lastName: string;
-    relation: string;
+    lastName: string | null;
+    relation: string | null;
   };
   children: Array<{
     studentId: string;
     firstName: string;
-    lastName: string;
+    lastName: string | null;
     admissionNumber: string;
     enrollment: {
       id: string;
-      rollNumber: string;
+      rollNumber: string | null;
       class: { id: string; name: string };
-      section: { id: string; name: string };
+      section: { id: string; name: string } | null;
       academicYear: { id: string; name: string; isActive: boolean };
     } | null;
     feeInvoices: Array<{
       id: string;
       status: string;
-      amountDue: number;
-      amountPaid: number;
+      amountDue: number | string;
+      amountPaid: number | string;
       dueDate: Date;
       feeStructure: { feeCategory: { name: string } };
     }>;
@@ -242,14 +242,17 @@ export class PortalService {
         lastName:  parent.lastName,
         relation:  parent.relation,
       },
-      children: mappings.map((m) => ({
-        studentId:       m.student.id,
-        firstName:       m.student.firstName,
-        lastName:        m.student.lastName,
-        admissionNumber: m.student.admissionNumber,
-        enrollment:      m.student.enrollments[0] ?? null,
-        feeInvoices:     m.student.feeInvoices,
-      })),
+      children: mappings.map((m) => {
+        const enr = m.student.enrollments[0];
+        return {
+          studentId:       m.student.id,
+          firstName:       m.student.firstName,
+          lastName:        m.student.lastName,
+          admissionNumber: m.student.admissionNumber,
+          enrollment:      enr ? { id: enr.id, rollNumber: enr.rollNumber, class: enr.class, section: enr.section, academicYear: enr.academicYear } : null,
+          feeInvoices:     m.student.feeInvoices.map((inv) => ({ ...inv, amountDue: Number(inv.amountDue), amountPaid: Number(inv.amountPaid) })),
+        };
+      }),
       upcomingExams,
     };
   }
@@ -336,7 +339,7 @@ export class PortalService {
 
     // Build the STRICT filter: only the specific (classId, sectionId) pairs
     // that belong to this parent's children's active enrollments.
-    type ClassSectionPair = { classId: string; sectionId: string; academicYearId: string };
+    type ClassSectionPair = { classId: string; sectionId: string | null; academicYearId: string };
     const pairs: ClassSectionPair[] = mappings
       .flatMap((m) => m.student.enrollments)
       .filter((e) => e.academicYear.isActive)
@@ -350,13 +353,15 @@ export class PortalService {
 
     // Strict Visibility Rule: fetch ONLY the matching class-section pairs.
     // Using OR of exact pairs prevents any cross-class data leakage.
+    // Prisma StringFilter does not accept null — omit sectionId from the
+    // where clause when the enrollment has no section assigned.
     const entries = await this.prisma.classTimetable.findMany({
       where: {
         tenantId,
         softDelete: false,
         OR: pairs.map((p) => ({
           classId:       p.classId,
-          sectionId:     p.sectionId,
+          sectionId:     p.sectionId ?? undefined,
           academicYearId: p.academicYearId,
         })),
       },
@@ -375,6 +380,6 @@ export class PortalService {
       ],
     });
 
-    return entries;
+    return entries as unknown as TimetableEntry[];
   }
 }

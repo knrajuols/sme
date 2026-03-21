@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AuthGuard, } from '../../../../components/AuthGuard';
 import { bffFetch } from '../../../../lib/api';
 import { type UserClaims } from '../../../../lib/auth';
+import { DateInput } from '../../../../components/ui/DateInput';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type YearStatus = 'ACTIVE' | 'UPCOMING' | 'CLOSED';
@@ -115,6 +116,14 @@ function YearPanel({
     };
   }
 
+  // Issue-238: Variant of set() for DateInput which emits a plain string value.
+  function setDate(field: 'startDate' | 'endDate') {
+    return (v: string) => {
+      setForm((prev) => ({ ...prev, [field]: v }));
+      if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
+    };
+  }
+
   function setActive(val: boolean) {
     setForm((prev) => ({ ...prev, isActive: val }));
   }
@@ -208,11 +217,10 @@ function YearPanel({
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 Start Date <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
+              <DateInput
                 className={inputCls(errors.startDate)}
                 value={form.startDate}
-                onChange={set('startDate')}
+                onValueChange={setDate('startDate')}
               />
               {errors.startDate && (
                 <p className="mt-1 text-xs text-red-600">{errors.startDate}</p>
@@ -222,12 +230,11 @@ function YearPanel({
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">
                 End Date <span className="text-red-500">*</span>
               </label>
-              <input
-                type="date"
+              <DateInput
                 className={inputCls(errors.endDate)}
                 value={form.endDate}
-                onChange={set('endDate')}
-                min={form.startDate || undefined}
+                onValueChange={setDate('endDate')}
+                minDate={form.startDate || undefined}
               />
               {errors.endDate && (
                 <p className="mt-1 text-xs text-red-600">{errors.endDate}</p>
@@ -411,11 +418,11 @@ function AcademicYearsContent({ claims: _claims }: { claims: UserClaims }) {
     setSeeding(true);
     setErrorMsg('');
     try {
-      await bffFetch<{ seeded: number }>('/api/academic-setup/years/seed', { method: 'POST' });
-      setSuccessMsg('✨ 3 sample academic years generated successfully.');
+      await bffFetch<{ seeded: number }>('/api/academic-setup/years/seed-from-master', { method: 'POST' });
+      setSuccessMsg('✅ Academic years generated from master template.');
       await fetchYears();
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : 'Failed to generate sample academic years');
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to generate academic years from master template');
     } finally {
       setSeeding(false);
       setTimeout(() => setSuccessMsg(''), 4000);
@@ -474,7 +481,7 @@ function AcademicYearsContent({ claims: _claims }: { claims: UserClaims }) {
               ) : (
                 <span aria-hidden="true">✨</span>
               )}
-              {seeding ? 'Generating…' : 'Generate Sample Data'}
+              {seeding ? 'Generating…' : 'Generate from Master Data'}
             </button>
           )}
           <button

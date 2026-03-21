@@ -261,7 +261,7 @@ function SubjectsContent({ claims: _claims }: { claims: UserClaims }) {
       (s) =>
         s.name.toLowerCase().includes(q) ||
         s.code.toLowerCase().includes(q) ||
-        (s.status === 'ACTIVE' ? 'active' : 'inactive').includes(q)
+        s.status.toLowerCase().includes(q)
     );
   }, [subjects, searchTerm]);
 
@@ -281,16 +281,16 @@ function SubjectsContent({ claims: _claims }: { claims: UserClaims }) {
     setSeeding(true);
     setSaveError('');
     try {
-      const result = await bffFetch<{ seeded: number }>('/api/academic-setup/subjects/seed', {
+      const result = await bffFetch<{ seeded: number }>('/api/academic-setup/subjects/seed-from-master', {
         method: 'POST',
       });
       // Reload the full list after seeding
       const fresh = await bffFetch<Subject[]>('/api/academic-setup/subjects');
       setSubjects(Array.isArray(fresh) ? fresh : []);
-      setSuccessMsg(`✨ ${result.seeded} subjects generated successfully.`);
+      setSuccessMsg(`✅ ${result.seeded} subjects generated from master template.`);
       setTimeout(() => setSuccessMsg(''), 5000);
     } catch (e: unknown) {
-      setSaveError(e instanceof Error ? e.message : 'Failed to seed subjects');
+      setSaveError(e instanceof Error ? e.message : 'Failed to generate subjects from master template');
     } finally {
       setSeeding(false);
     }
@@ -424,7 +424,7 @@ function SubjectsContent({ claims: _claims }: { claims: UserClaims }) {
                   Generating&hellip;
                 </>
               ) : (
-                <>✨ Generate Sample Data</>
+                <>✅ Generate from Master Data</>
               )}
             </button>
           )}

@@ -1,0 +1,400 @@
+﻿  async processExamResults(
+    examId: string,
+    classId: string,
+    context: RequestContext,
+  ): Promise<{ processed: number }> {
+    // 1. Validate the exam is in this tenant and belongs to the given class
+    const exam = await this.prisma.exam.findFirst({
+      where: { id: examId, tenantId: context.tenantId, softDelete: false },
+      select: { id: true, classId: true },
+    });
+    if (!exam) throw new NotFoundException('[ERR-PROC-4041] Exam not found');
+    if (exam.classId !== classId) {
+      throw new BadRequestException('[ERR-PROC-4000] Exam does not belong to this class');
+    }
+
+    // 2. Students enrolled in this class (any section)
+    const enrollments = await this.prisma.studentEnrollment.findMany({
+      where: { tenantId: context.tenantId, classId, softDelete: false },
+      select: { studentId: true, sectionId: true },
+    });
+    if (enrollments.length === 0) {
+      throw new BadRequestException('[ERR-PROC-4001] No students enrolled in this class');
+    }
+    const studentIds = enrollments.map((e) => e.studentId);
+    const sectionOfStudent: Record<string, string> = {};
+    for (const e of enrollments) sectionOfStudent[e.studentId] = e.sectionId;
+
+    // 3. Total max marks across all ExamSubjects for this exam
+    const examSubjects = await this.prisma.examSubject.findMany({
+      where: { tenantId: context.tenantId, examId, softDelete: false },
+      select: { maxMarks: true },
+    });
+    const totalMaxMarks = examSubjects.reduce((sum, es) => sum + es.maxMarks, 0);
+    if (totalMaxMarks === 0) {
+      throw new BadRequestException('[ERR-PROC-4002] No exam subjects defined or total max marks is zero');
+    }
+
+    // 4. All marks submitted for this exam & students
+    const allMarks = await this.prisma.studentMark.findMany({
+      where: {
+        tenantId: context.tenantId,
+        examId,
+        studentId: { in: studentIds },
+        softDelete: false,
+      },
+      select: { studentId: true, marksObtained: true },
+    });
+
+    // 5. Grade scale (highest minPercentage first â†’ first match wins)
+    const gradeScales = await this.prisma.gradeScale.findMany({
+      where: { tenantId: context.tenantId, softDelete: false },
+      orderBy: { minPercentage: 'desc' },
+    });
+
+    function findGrade(pct: number): string {
+      for (const gs of gradeScales) {
+        if (pct >= gs.minPercentage && pct <= gs.maxPercentage) return gs.grade;
+      }
+      return 'N/A';
+    }
+
+    // 6. Aggregate marks per student
+    const marksByStudent: Record<string, number> = {};
+    for (const m of allMarks) {
+      marksByStudent[m.studentId] = (marksByStudent[m.studentId] ?? 0) + m.marksObtained;
+    }
+
+    type StudentAgg = {
+      studentId: string;
+      sectionId: string;
+      totalObtained: number;
+      percentage: number;
+      grade: string;
+    };
+
+    const studentAggs: StudentAgg[] = studentIds.map((studentId) => {
+      const totalObtained = marksByStudent[studentId] ?? 0;
+      const rawPct = (totalObtained / totalMaxMarks) * 100;
+      const percentage = parseFloat(rawPct.toFixed(2));
+      return {
+        studentId,
+        sectionId: sectionOfStudent[studentId],
+        totalObtained,
+        percentage,
+        grade: findGrade(percentage),
+      };
+    });
+
+    // 7. Class rank (all students sorted by totalObtained descending)
+    const sortedByTotal = [...studentAggs].sort((a, b) => b.totalObtained - a.totalObtained);
+    const classRankMap: Record<string, number> = {};
+    sortedByTotal.forEach((s, i) => { classRankMap[s.studentId] = i + 1; });
+
+    // 8. Section rank (within each section, sorted by totalObtained descending)
+    const bySec: Record<string, StudentAgg[]> = {};
+    for (const sa of studentAggs) {
+      if (!bySec[sa.sectionId]) bySec[sa.sectionId] = [];
+      bySec[sa.sectionId].push(sa);
+    }
+    const sectionRankMap: Record<string, number> = {};
+    for (const secStudents of Object.values(bySec)) {
+      const secSorted = [...secStudents].sort((a, b) => b.totalObtained - a.totalObtained);
+      secSorted.forEach((s, i) => { sectionRankMap[s.studentId] = i + 1; });
+    }
+
+    // 9. Atomic transaction: wipe stale results + write fresh ones
+    const processed = await this.prisma.$transaction(async (tx) => {
+      await tx.studentExamResult.deleteMany({
+        where: { tenantId: context.tenantId, examId, studentId: { in: studentIds } },
+      });
+      await tx.studentExamAggregate.deleteMany({
+        where: { tenantId: context.tenantId, examId, studentId: { in: studentIds } },
+      });
+
+      await tx.studentExamResult.createMany({
+        data: studentAggs.map((sa) => ({
+          tenantId: context.tenantId,
+          examId,
+          studentId: sa.studentId,
+          totalMarks: sa.totalObtained,
+          percentage: sa.percentage,
+          grade: sa.grade,
+          createdBy: context.userId,
+          updatedBy: context.userId,
+        })),
+      });
+
+      await tx.studentExamAggregate.createMany({
+        data: studentAggs.map((sa) => ({
+          tenantId: context.tenantId,
+          examId,
+          studentId: sa.studentId,
+          totalMarks: sa.totalObtained,
+          percentage: sa.percentage,
+          grade: sa.grade,
+          classRank: classRankMap[sa.studentId],
+          sectionRank: sectionRankMap[sa.studentId],
+          createdBy: context.userId,
+          updatedBy: context.userId,
+        })),
+      });
+
+      return studentAggs.length;
+    });
+
+    await this.publishAudit(
+      context,
+      'PROCESS_RESULTS',
+      'StudentExamResult',
+      examId,
+      'Exam results processed and aggregated',
+      { examId, classId, studentCount: processed },
+    );
+
+    return { processed };
+  }
+
+  // â”€â”€ Onboarding Seeder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  /**
+   * Idempotent PAN-India Quick Setup Seeder.
+   * Creates 3 academic years, 10 classes (for the active year), 3 sections per
+   * class (A-C), 5 core subjects, and all 17 official Indian language subjects
+   * in a single atomic transaction.
+   */
+  async seedDefaultSetup(
+    tenantId: string,
+    userId: string,
+  ): Promise<{ seeded: number }> {
+    // â”€â”€ Idempotency guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const existingCount = await this.prisma.class.count({
+      where: { tenantId, softDelete: false },
+    });
+    if (existingCount > 0) {
+      throw new ConflictException('School is already set up.');
+    }
+
+    // â”€â”€ Pre-generate deterministic IDs so the batch array can reference them
+    const yearIds = [randomUUID(), randomUUID(), randomUUID()];
+    const classIds = Array.from({ length: 10 }, () => randomUUID());
+
+    const NOW = new Date();
+    const base = (id: string) => ({
+      id,
+      tenantId,
+      createdBy: userId,
+      updatedBy: userId,
+    });
+
+    // â”€â”€ Academic Years â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const academicYearOps = [
+      this.prisma.academicYear.create({
+        data: {
+          ...base(yearIds[0]),
+          name: '2025-2026',
+          startDate: new Date('2025-04-01'),
+          endDate:   new Date('2026-03-31'),
+          isActive:  false, // COMPLETED
+        },
+      }),
+      this.prisma.academicYear.create({
+        data: {
+          ...base(yearIds[1]),
+          name: '2026-2027',
+          startDate: new Date('2026-04-01'),
+          endDate:   new Date('2027-03-31'),
+          isActive:  true,  // ACTIVE
+        },
+      }),
+      this.prisma.academicYear.create({
+        data: {
+          ...base(yearIds[2]),
+          name: '2027-2028',
+          startDate: new Date('2027-04-01'),
+          endDate:   new Date('2028-03-31'),
+          isActive:  false, // PLANNED
+        },
+      }),
+    ];
+
+    // â”€â”€ Classes (tied to the ACTIVE academic year 2026-2027) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const classNames = [
+      'Class 1', 'Class 2', 'Class 3', 'Class 4', 'Class 5',
+      'Class 6', 'Class 7', 'Class 8', 'Class 9', 'Class 10',
+    ];
+    const classCodes = [
+      'G01', 'G02', 'G03', 'G04', 'G05',
+      'G06', 'G07', 'G08', 'G09', 'G10',
+    ];
+    const classOps = classNames.map((name, i) =>
+      this.prisma.class.create({
+        data: {
+          ...base(classIds[i]),
+          name,
+          code: classCodes[i],
+          academicYearId: yearIds[1], // ACTIVE year
+        },
+      }),
+    );
+
+    // â”€â”€ Sections (A, B, C for every class) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const sectionLabels = ['A', 'B', 'C'];
+    const sectionOps = classIds.flatMap((classId) =>
+      sectionLabels.map((name) =>
+        this.prisma.section.create({
+          data: {
+            ...base(randomUUID()),
+            name,
+            classId,
+          },
+        }),
+      ),
+    );
+
+    // â”€â”€ Core Subjects â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const coreSubjectData: Array<{ name: string; code: string }> = [
+      { name: 'Mathematics',                  code: 'MATH' },
+      { name: 'Science',                      code: 'SCI'  },
+      { name: 'Social Studies',               code: 'SS'   },
+      { name: 'Computer Science',             code: 'CS'   },
+      { name: 'Environmental Science (EVS)',  code: 'EVS'  },
+    ];
+    const coreOps = coreSubjectData.map((s) =>
+      this.prisma.subject.create({
+        data: {
+          ...base(randomUUID()),
+          name: s.name,
+          code: s.code,
+          type: 'CORE' as any,
+        },
+      }),
+    );
+
+    // â”€â”€ Language Subjects (all 17 languages on the Indian currency note) â”€â”€â”€
+    const langSubjectData: Array<{ name: string; code: string }> = [
+      { name: 'English',   code: 'EN'  },
+      { name: 'Hindi',     code: 'HI'  },
+      { name: 'Assamese',  code: 'AS'  },
+      { name: 'Bengali',   code: 'BN'  },
+      { name: 'Gujarati',  code: 'GU'  },
+      { name: 'Kannada',   code: 'KN'  },
+      { name: 'Kashmiri',  code: 'KS'  },
+      { name: 'Konkani',   code: 'KOK' },
+      { name: 'Malayalam', code: 'ML'  },
+      { name: 'Marathi',   code: 'MR'  },
+      { name: 'Nepali',    code: 'NE'  },
+      { name: 'Odia',      code: 'OD'  },
+      { name: 'Punjabi',   code: 'PU'  },
+      { name: 'Sanskrit',  code: 'SA'  },
+      { name: 'Tamil',     code: 'TA'  },
+      { name: 'Telugu',    code: 'TE'  },
+      { name: 'Urdu',      code: 'UR'  },
+    ];
+    const langOps = langSubjectData.map((s) =>
+      this.prisma.subject.create({
+        data: {
+          ...base(randomUUID()),
+          name: s.name,
+          code: s.code,
+          type: 'LANGUAGE' as any,
+        },
+      }),
+    );
+
+    // â”€â”€ Execute all 65 writes atomically â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // 3 academic years + 10 classes + 30 sections + 5 core + 17 language = 65
+    await this.prisma.$transaction([
+      ...academicYearOps,
+      ...classOps,
+      ...sectionOps,
+      ...coreOps,
+      ...langOps,
+    ]);
+
+    const seeded = 3 + 10 + 30 + 5 + 17; // 65
+    const context: RequestContext = {
+      tenantId,
+      userId,
+      role: 'SCHOOL_ADMIN',
+      correlationId: randomUUID(),
+    };
+    await this.publishAudit(
+      context,
+      'SEED',
+      'School',
+      tenantId,
+      'PAN-India default setup seeded',
+      { seeded, academicYears: 3, classes: 10, sections: 30, subjects: 22 },
+    );
+    return { seeded };
+  }
+
+  // â”€â”€ Report Card View â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+  async getStudentResult(examId: string, studentId: string, tenantId: string) {
+    // Validate exam belongs to tenant
+    const exam = await this.prisma.exam.findFirst({
+      where: { id: examId, tenantId, softDelete: false },
+      select: { id: true, name: true, classId: true },
+    });
+    if (!exam) throw new NotFoundException('[ERR-RES-4041] Exam not found');
+
+    // Validate student belongs to tenant
+    const student = await this.prisma.student.findFirst({
+      where: { id: studentId, tenantId, softDelete: false },
+      select: { id: true, firstName: true, lastName: true, admissionNumber: true },
+    });
+    if (!student) throw new NotFoundException('[ERR-RES-4042] Student not found');
+
+    // Check whether results have been processed for this student/exam
+    const aggregate = await this.prisma.studentExamAggregate.findFirst({
+      where: { tenantId, examId, studentId, softDelete: false },
+      select: { totalMarks: true, percentage: true, grade: true, classRank: true, sectionRank: true },
+    });
+    if (!aggregate) return null; // indicates "not yet processed"
+
+    // Parallel fetch: per-subject marks + exam-subject max marks + enrollment (class/section names)
+    const [marksRaw, examSubjectsRaw, enrollmentRaw] = await Promise.all([
+      this.prisma.studentMark.findMany({
+        where: { tenantId, examId, studentId, softDelete: false },
+        include: { subject: { select: { id: true, name: true, code: true } } },
+        orderBy: { createdAt: 'asc' },
+      }),
+      this.prisma.examSubject.findMany({
+        where: { tenantId, examId, softDelete: false },
+        select: { subjectId: true, maxMarks: true },
+      }),
+      this.prisma.studentEnrollment.findFirst({
+        where: { tenantId, studentId, classId: exam.classId, softDelete: false },
+        include: {
+          class:   { select: { name: true, code: true } },
+          section: { select: { name: true } },
+        },
+      }),
+    ]);
+
+    const maxMarksBySubject: Record<string, number> = {};
+    for (const es of examSubjectsRaw) maxMarksBySubject[es.subjectId] = es.maxMarks;
+
+    return {
+      student: {
+        id:              student.id,
+        firstName:       student.firstName,
+        lastName:        student.lastName,
+        admissionNumber: student.admissionNumber,
+      },
+      exam: { id: exam.id, name: exam.name },
+      enrollment: {
+        className:   enrollmentRaw?.class?.name   ?? 'â€”',
+        classCode:   enrollmentRaw?.class?.code   ?? '',
+        sectionName: enrollmentRaw?.section?.name ?? 'â€”',
+      },
+      aggregate: {
+        totalMarks:  aggregate.totalMarks,
+        percentage:  aggregate.percentage,
+        grade:       aggregate.grade,
+        classRank:   aggregate.classRank,
+        sectionRank: aggregate.sectionRank,
+      },
+      subjectMarks: marksRaw.map((m) => ({

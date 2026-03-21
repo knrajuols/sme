@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { AuthGuard } from '../../../components/AuthGuard';
 import { bffFetch } from '../../../lib/api';
 import type { UserClaims } from '../../../lib/auth';
+import { fetchProfile } from '../../../lib/profileApi';
 import { PremiumCard } from '../../../components/ui/PremiumCard';
 import type { AccentColor } from '../../../components/ui/PremiumCard';
 import { StatusPill } from '../../../components/ui/StatusPill';
@@ -41,6 +42,8 @@ function AdminDashboardContent({ claims }: { claims: UserClaims }) {
   const [loading, setLoading]         = useState(true);
   const [seeding, setSeeding]         = useState(false);
   const [seedError, setSeedError]     = useState('');
+  const [schoolName, setSchoolName]   = useState<string | null>(null);
+  const [tenantCode, setTenantCode]   = useState<string | null>(null);
 
   const fetchSummary = async (cancelled: { value: boolean }) => {
     try {
@@ -57,6 +60,15 @@ function AdminDashboardContent({ claims }: { claims: UserClaims }) {
     const cancelled = { value: false };
     fetchSummary(cancelled);
     return () => { cancelled.value = true; };
+  }, []);
+
+  useEffect(() => {
+    fetchProfile<{ schoolName?: string; tenantCode?: string }>()
+      .then((p) => {
+        setSchoolName(p.schoolName ?? null);
+        setTenantCode(p.tenantCode ?? null);
+      })
+      .catch(() => { /* display falls back to tenantId */ });
   }, []);
 
   const handleSeedDefaults = async () => {
@@ -128,8 +140,15 @@ function AdminDashboardContent({ claims }: { claims: UserClaims }) {
         <div>
           <h1 className="text-2xl font-bold text-slate-900">School Admin Dashboard</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Tenant:&nbsp;<span className="font-medium text-slate-700">{claims.tenantId}</span>
-            &ensp;&bull;&ensp;User:&nbsp;<span className="font-medium text-slate-700">{claims.sub}</span>
+            <span className="font-medium text-slate-700">
+              {schoolName ?? tenantCode ?? 'Your School'}
+            </span>
+            {tenantCode && schoolName && (
+              <>&ensp;<span className="text-slate-400">({tenantCode})</span></>
+            )}
+            {claims.email && (
+              <>&ensp;&bull;&ensp;<span className="font-medium text-slate-700">{claims.email}</span></>
+            )}
           </p>
         </div>
         <span className="rounded-full bg-blue-100 px-3 py-1 text-xs font-semibold text-blue-700">
@@ -155,9 +174,8 @@ function AdminDashboardContent({ claims }: { claims: UserClaims }) {
               Welcome to Your New School ERP!
             </h2>
             <p className="max-w-xl text-sm text-slate-500 leading-relaxed">
-              Your workspace is currently empty. Click the button below to instantly generate standard
-              Academic Years, Classes (1–10), Sections (A–C), Core Subjects, and all&nbsp;
-              <span className="font-semibold text-purple-700">17 Official Regional Languages</span>.
+              Your workspace is currently empty. Click the button below to generate your school’s
+              Academic Years, Classes, Sections, and Subjects directly from the platform master template.
             </p>
           </div>
 
@@ -181,12 +199,12 @@ function AdminDashboardContent({ claims }: { claims: UserClaims }) {
                 Setting up…
               </>
             ) : (
-              <>✨ Run PAN-India Quick Setup</>
+              <>✅ Generate from Master Data</>
             )}
           </button>
 
           <p className="text-xs text-slate-400">
-            This will create 65 records in a single atomic transaction. Safe to run once.
+            Copies master template data into your school. Safe to run once.
           </p>
         </PremiumCard>
       )}

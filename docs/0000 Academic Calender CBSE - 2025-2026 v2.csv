@@ -1,0 +1,40 @@
+﻿Sl No,Academic Year,Date,Occasion / Milestone,Type,Working Day?
+1,2025-2026,01-Apr-25,New Academic Session Begins,Academic,Yes
+2,2025-2026,06-Apr-25,Ram Navami,Holiday,No
+3,2025-2026,10-Apr-25,Mahavir Jayanti,Holiday,No
+4,2025-2026,14-Apr-25,Dr. Ambedkar Jayanti,Holiday,No
+5,2025-2026,18-Apr-25,Good Friday,Holiday,No
+6,2025-2026,16-May-25,Summer Vacation Starts,Vacation_Start,No
+7,2025-2026,07-Jun-25,Id-ul-Zuha (Bakrid),Holiday,No
+8,2025-2026,22-Jun-25,Summer Vacation Ends,Vacation_End,No
+9,2025-2026,23-Jun-25,School Reopens after Summer Break,Academic,Yes
+10,2025-2026,06-Jul-25,Muharram,Holiday,No
+11,2025-2026,15-Jul-25,Periodic Test - I (PT-1) Starts,Exam,Yes
+12,2025-2026,25-Jul-25,Periodic Test - I (PT-1) Ends,Exam,Yes
+13,2025-2026,15-Aug-25,Independence Day (Flag Hoisting),Holiday,No
+14,2025-2026,16-Aug-25,Janmashtami,Holiday,No
+15,2025-2026,27-Aug-25,Ganesh Chaturthi,Holiday,No
+16,2025-2026,05-Sep-25,Id-e-Milad / Teachers' Day,Holiday,No
+17,2025-2026,20-Sep-25,Half-Yearly / Term-1 Exams Start,Exam_Start,Yes
+18,2025-2026,30-Sep-25,Half-Yearly / Term-1 Exams Ends,Exam_End,Yes
+19,2025-2026,02-Oct-25,Gandhi Jayanti / Vijayadashami,Holiday,No
+20,2025-2026,15-Oct-25,Term-1 Result Declaration (PTM),Event,Yes
+21,2025-2026,18-Oct-25,Diwali / Mid-Term Break Starts,Vacation_Start,No
+22,2025-2026,23-Oct-25,Diwali / Mid-Term Break Ends,Vacation_End,No
+23,2025-2026,14-Nov-25,Children's Day,Celebration,Yes
+24,2025-2026,01-Dec-25,Periodic Test - II (PT-2) Starts,Exam,Yes
+25,2025-2026,10-Dec-25,Periodic Test - II (PT-2) Ends,Exam,Yes
+26,2025-2026,25-Dec-25,Christmas Day,Holiday,No
+27,2025-2026,29-Dec-25,Winter Break Starts,Vacation_Start,No
+28,2025-2026,07-Jan-26,Winter Break Ends,Vacation_End,No
+29,2025-2026,15-Jan-26,Pre-Board Exams (Class 10 & 12) Starts,Exam,Yes
+30,2025-2026,25-Jan-26,Pre-Board Exams (Class 10 & 12) Ends,Exam,Yes
+31,2025-2026,26-Jan-26,Republic Day,Holiday,No
+32,2025-2026,15-Feb-26,Maha Shivratri,Holiday,No
+33,2025-2026,17-Feb-26,CBSE Board Exams Begin,Exam,Yes
+34,2025-2026,01-Mar-26,Annual Exams (Non-Board) Starts,Exam_Start,Yes
+35,2025-2026,04-Mar-26,Holi,Holiday,No
+36,2025-2026,15-Mar-26,Annual Exams (Non-Board) Ends,Exam_End,Yes
+37,2025-2026,21-Mar-26,Id-ul-Fitr (Ramzan),Holiday,No
+38,2025-2026,25-Mar-26,Final Result Declaration (PTM),Event,Yes
+39,2025-2026,31-Mar-26,Academic Session Ends,Academic,Yes

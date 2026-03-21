@@ -8,80 +8,18 @@ import { bffFetch } from '../../../../lib/api';
 import type { UserClaims } from '../../../../lib/auth';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-type NamingStyle = 'ALPHABETIC' | 'THEMATIC';
-
 interface Section {
-  id: string;
-  name: string;
-  classId: string | null;
-  className: string | null;
-}
-
-interface ClassOption {
   id: string;
   name: string;
 }
 
 interface SectionForm {
   name: string;
-  classId: string;
 }
 
 type FormErrors = Partial<Record<keyof SectionForm, string>>;
 
-// ── Seed style picker modal ───────────────────────────────────────────────────
-function SeedStyleModal({
-  open,
-  seeding,
-  onCancel,
-  onConfirm,
-}: {
-  open: boolean;
-  seeding: boolean;
-  onCancel: () => void;
-  onConfirm: (style: NamingStyle) => void;
-}) {
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onCancel} aria-hidden="true" />
-      <div className="relative z-10 w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-        <h3 className="text-base font-bold text-slate-900 mb-1">Choose Naming Style</h3>
-        <p className="text-sm text-slate-500 mb-5">Select how the 10 sections will be named.</p>
-        <div className="flex flex-col gap-3">
-          <button
-            type="button"
-            disabled={seeding}
-            onClick={() => onConfirm('ALPHABETIC')}
-            className="group rounded-xl border-2 border-blue-200 bg-blue-50 px-4 py-3.5 text-left hover:border-blue-400 hover:bg-blue-100 transition-colors disabled:opacity-60"
-          >
-            <p className="text-sm font-bold text-blue-800">Alphabetic</p>
-            <p className="text-xs text-blue-600 mt-0.5">Section A, Section B &hellip; Section J</p>
-          </button>
-          <button
-            type="button"
-            disabled={seeding}
-            onClick={() => onConfirm('THEMATIC')}
-            className="group rounded-xl border-2 border-teal-200 bg-teal-50 px-4 py-3.5 text-left hover:border-teal-400 hover:bg-teal-100 transition-colors disabled:opacity-60"
-          >
-            <p className="text-sm font-bold text-teal-800">Thematic (Rivers &amp; Names)</p>
-            <p className="text-xs text-teal-600 mt-0.5">Rama, Krishna, Ganga, Yamuna&hellip;</p>
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={seeding}
-            className="mt-1 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors disabled:opacity-60"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const EMPTY_FORM: SectionForm = { name: '', classId: '' };
+const EMPTY_FORM: SectionForm = { name: '' };
 
 // ── Validation ────────────────────────────────────────────────────────────────
 function validateForm(form: SectionForm): FormErrors {
@@ -89,7 +27,6 @@ function validateForm(form: SectionForm): FormErrors {
   if (!form.name.trim()) e.name = 'Section name is required.';
   else if (form.name.trim().length < 1) e.name = 'Name must be at least 1 character.';
   else if (form.name.trim().length > 20) e.name = 'Name must be 20 characters or fewer.';
-  if (!form.classId) e.classId = 'Please select a class.';
   return e;
 }
 
@@ -97,14 +34,12 @@ function validateForm(form: SectionForm): FormErrors {
 function SectionPanel({
   open,
   editingSection,
-  classOptions,
   onClose,
   onSave,
   saving,
 }: {
   open: boolean;
   editingSection: Section | null;
-  classOptions: ClassOption[];
   onClose: () => void;
   onSave: (form: SectionForm) => void;
   saving: boolean;
@@ -117,7 +52,7 @@ function SectionPanel({
     if (open) {
       setForm(
         editingSection
-          ? { name: editingSection.name, classId: editingSection.classId ?? '' }
+          ? { name: editingSection.name }
           : EMPTY_FORM
       );
       setErrors({});
@@ -126,13 +61,6 @@ function SectionPanel({
 
   function setTextField(field: keyof SectionForm) {
     return (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value }));
-      if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
-    };
-  }
-
-  function setSelectField(field: keyof SectionForm) {
-    return (e: React.ChangeEvent<HTMLSelectElement>) => {
       setForm((prev) => ({ ...prev, [field]: e.target.value }));
       if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
     };
@@ -167,10 +95,10 @@ function SectionPanel({
         <div className="flex items-center justify-between px-6 py-5 border-b border-slate-200 flex-shrink-0">
           <div>
             <h2 className="text-base font-bold text-slate-900">
-              {isEdit ? `Edit: ${editingSection!.className} — ${editingSection!.name}` : 'Add Section'}
+              {isEdit ? `Edit: ${editingSection!.name}` : 'Add Section'}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              {isEdit ? 'Update this section record.' : 'Create a new section within a class.'}
+              {isEdit ? 'Update this section record.' : 'Create a new section template.'}
             </p>
           </div>
           <button
@@ -187,28 +115,6 @@ function SectionPanel({
 
         {/* Body */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-5">
-          {/* Class selector */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-              Class <span className="text-red-500">*</span>
-            </label>
-            <select
-              className={inputCls(errors.classId)}
-              value={form.classId}
-              onChange={setSelectField('classId')}
-            >
-              <option value="">- Select a class -</option>
-              {classOptions.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            {errors.classId && (
-              <p className="mt-1 text-xs text-red-600 flex items-center gap-1">
-                <span aria-hidden="true">&#x26A0;</span>{errors.classId}
-              </p>
-            )}
-          </div>
-
           {/* Section name */}
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">
@@ -306,7 +212,6 @@ function DeleteDialog({
 // ── Main content ──────────────────────────────────────────────────────────────
 function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
   const [sections, setSections] = useState<Section[]>([]);
-  const [classes, setClasses] = useState<ClassOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
@@ -317,28 +222,21 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
   const [deleteTarget, setDeleteTarget] = useState<Section | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [seeding, setSeedingState] = useState(false);
-  const [seedModalOpen, setSeedModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
 
   const filteredSections = useMemo(() => {
     if (!searchTerm.trim()) return sections;
     const q = searchTerm.toLowerCase();
     return sections.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        (s.className ?? '').toLowerCase().includes(q)
+      (s) => s.name.toLowerCase().includes(q)
     );
   }, [sections, searchTerm]);
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      bffFetch<Section[]>('/api/academic-setup/sections'),
-      bffFetch<ClassOption[]>('/api/academic-setup/classes'),
-    ])
-      .then(([sec, cls]) => {
+    bffFetch<Section[]>('/api/academic-setup/sections')
+      .then((sec) => {
         setSections(Array.isArray(sec) ? sec : []);
-        setClasses(Array.isArray(cls) ? cls : []);
       })
       .catch((e: unknown) => {
         setLoadError(e instanceof Error ? e.message : 'Failed to load data');
@@ -362,21 +260,18 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
     setTimeout(() => setEditingSection(null), 300);
   }
 
-  async function handleSeed(style: NamingStyle) {
-    setSeedModalOpen(false);
+  async function handleSeed() {
     setSeedingState(true);
     setSaveError('');
     try {
-      const result = await bffFetch<{ seeded: number }>('/api/academic-setup/sections/seed', {
+      const result = await bffFetch<{ seeded: number }>('/api/academic-setup/sections/seed-from-master', {
         method: 'POST',
-        body: JSON.stringify({ namingStyle: style }),
       });
-      const label = style === 'ALPHABETIC' ? 'Section A–J' : 'thematic river names';
-      setSuccessMsg(`✨ ${result.seeded} sections (${label}) generated successfully.`);
+      setSuccessMsg(`✅ ${result.seeded} sections generated from master template.`);
       const fresh = await bffFetch<Section[]>('/api/academic-setup/sections');
       setSections(Array.isArray(fresh) ? fresh : []);
     } catch (e: unknown) {
-      setSaveError(e instanceof Error ? e.message : 'Failed to generate sections');
+      setSaveError(e instanceof Error ? e.message : 'Failed to generate sections from master template');
     } finally {
       setSeedingState(false);
       setTimeout(() => setSuccessMsg(''), 5000);
@@ -392,29 +287,25 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
           method: 'PATCH',
           body: JSON.stringify({ name: form.name.trim() }),
         });
-        const selectedClass = classes.find((c) => c.id === form.classId);
         setSections((prev) =>
           prev.map((s) =>
             s.id === editingSection.id
-              ? { ...s, name: form.name.trim(), classId: form.classId, className: selectedClass?.name ?? s.className }
+              ? { ...s, name: form.name.trim() }
               : s
           )
         );
-        setSuccessMsg(`Section "${selectedClass?.name ?? form.classId} — ${form.name.trim()}" updated successfully.`);
+        setSuccessMsg(`Section "${form.name.trim()}" updated successfully.`);
       } else {
-        const selectedClass = classes.find((c) => c.id === form.classId);
         const result = await bffFetch<{ id: string }>('/api/academic-setup/sections', {
           method: 'POST',
-          body: JSON.stringify({ name: form.name.trim(), classId: form.classId }),
+          body: JSON.stringify({ name: form.name.trim() }),
         });
         const newSection: Section = {
           id: result.id,
           name: form.name.trim(),
-          classId: form.classId,
-          className: selectedClass?.name ?? form.classId,
         };
         setSections((prev) => [...prev, newSection]);
-        setSuccessMsg(`Section "${newSection.className} — ${newSection.name}" added successfully.`);
+        setSuccessMsg(`Section "${newSection.name}" added successfully.`);
       }
       setSaving(false);
       setPanelOpen(false);
@@ -432,7 +323,7 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
     try {
       await bffFetch<unknown>(`/api/academic-setup/sections/${deleteTarget.id}`, { method: 'DELETE' });
       setSections((prev) => prev.filter((s) => s.id !== deleteTarget.id));
-      setSuccessMsg(`Section "${deleteTarget.className} — ${deleteTarget.name}" deleted.`);
+      setSuccessMsg(`Section "${deleteTarget.name}" deleted.`);
       setDeleteTarget(null);
       setTimeout(() => setSuccessMsg(''), 4000);
     } catch (e: unknown) {
@@ -459,13 +350,13 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Sections</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Divide each class into named sections and assign teachers.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Manage reusable section templates that can be assigned to any class.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {sections.length === 0 && !loading && (
             <button
               type="button"
-              onClick={() => setSeedModalOpen(true)}
+              onClick={() => void handleSeed()}
               disabled={seeding}
               className="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-white px-4 py-2.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 shadow-sm disabled:opacity-60 transition-colors flex-shrink-0"
             >
@@ -478,7 +369,7 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
                   Generating&hellip;
                 </>
               ) : (
-                <>✨ Generate Sample Data</>
+                <>✅ Generate from Master Data</>
               )}
             </button>
           )}
@@ -559,7 +450,6 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
           <thead>
             <tr className="border-b border-slate-100 bg-slate-50/70">
               <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Section</th>
-              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Class</th>
               <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
             </tr>
           </thead>
@@ -567,9 +457,6 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
             {filteredSections.map((s) => (
               <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                 <td className="px-5 py-4 font-semibold text-slate-900">{s.name}</td>
-                <td className="px-5 py-4 text-slate-600">
-                  {s.className ?? <span className="text-slate-300 italic text-xs">Pool (unassigned)</span>}
-                </td>
                 <td className="px-5 py-4">
                   <div className="flex items-center justify-end gap-2">
                     <button type="button" onClick={() => openEdit(s)}
@@ -586,7 +473,7 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
             ))}
             {filteredSections.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-5 py-16 text-center text-sm text-slate-400">
+                <td colSpan={2} className="px-5 py-16 text-center text-sm text-slate-400">
                   {searchTerm
                     ? `No results for "${searchTerm}".`
                     : 'No sections yet. Click “Add Section” to get started.'}
@@ -603,7 +490,6 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
           <div key={s.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-start justify-between mb-2">
               <p className="font-bold text-slate-900 text-base">{s.name}</p>
-              <span className="text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">{s.className}</span>
             </div>
             <div className="flex gap-2 mt-3">
               <button type="button" onClick={() => openEdit(s)}
@@ -635,22 +521,14 @@ function SectionsContent({ claims: _claims }: { claims: UserClaims }) {
       <SectionPanel
         open={panelOpen}
         editingSection={editingSection}
-        classOptions={classes}
         onClose={handleClose}
         onSave={handleSave}
         saving={saving}
       />
 
-      <SeedStyleModal
-        open={seedModalOpen}
-        seeding={seeding}
-        onCancel={() => setSeedModalOpen(false)}
-        onConfirm={(style) => void handleSeed(style)}
-      />
-
       <DeleteDialog
         open={deleteTarget !== null}
-        label={deleteTarget ? `${deleteTarget.className} — ${deleteTarget.name}` : ''}
+        label={deleteTarget ? deleteTarget.name : ''}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleDeleteConfirm}
         deleting={deleting}

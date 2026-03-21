@@ -43,6 +43,13 @@ const SUBJECTS_ICON = (
   </svg>
 );
 
+const CLASS_SECTIONS_ICON = (
+  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75}
+      d="M17 14v6m-3-3h6M6 10h2a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 002 2zm10 0h2a2 2 0 002-2V6a2 2 0 00-2-2h-2a2 2 0 00-2 2v2a2 2 0 002 2zM6 20h2a2 2 0 002-2v-2a2 2 0 00-2-2H6a2 2 0 00-2 2v2a2 2 0 002 2z" />
+  </svg>
+);
+
 const HUB_CARDS: HubCard[] = [
   {
     href: '/admin/academic-setup/years',
@@ -67,6 +74,14 @@ const HUB_CARDS: HubCard[] = [
     description: 'Divide each class into named sections (A, B, C …) and assign class teachers.',
     accent: 'bg-fuchsia-50 text-fuchsia-600 group-hover:bg-fuchsia-100',
     borderHover: 'hover:border-fuchsia-300',
+  },
+  {
+    href: '/admin/academic-setup/class-sections',
+    icon: CLASS_SECTIONS_ICON,
+    title: 'Class-Sections',
+    description: 'Assign a section to each class with a unique display name (e.g. 10-A, 5-Ganga).',
+    accent: 'bg-amber-50 text-amber-600 group-hover:bg-amber-100',
+    borderHover: 'hover:border-amber-300',
   },
   {
     href: '/admin/academic-setup/subjects',

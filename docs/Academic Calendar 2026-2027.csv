@@ -1,0 +1,39 @@
+﻿Sl No,Academic Year,Date,Occasion / Milestone,Type,Working Day?
+1,2026-2027,01-Apr-26,New Academic Session Begins,Academic,Yes
+2,2026-2027,03-Apr-26,Good Friday,Holiday,No
+3,2026-2027,14-Apr-26,Dr. Ambedkar Jayanti,Holiday,No
+4,2026-2027,15-May-26,Summer Vacation Starts,Vacation_Start,No
+5,2026-2027,27-May-26,Id-ul-Zuha (Bakrid),Holiday,No
+6,2026-2027,21-Jun-26,Summer Vacation Ends,Vacation_End,No
+7,2026-2027,22-Jun-26,School Reopens after Summer Break,Academic,Yes
+8,2026-2027,26-Jun-26,Muharram,Holiday,No
+9,2026-2027,13-Jul-26,Periodic Test - I (PT-1) Starts,Exam,Yes
+10,2026-2027,23-Jul-26,Periodic Test - I (PT-1) Ends,Exam,Yes
+11,2026-2027,15-Aug-26,Independence Day (Flag Hoisting),Holiday,No
+12,2026-2027,26-Aug-26,Id-e-Milad / Milad-un-Nabi,Holiday,No
+13,2026-2027,04-Sep-26,Janmashtami,Holiday,No
+14,2026-2027,05-Sep-26,Teachers' Day,Celebration,Yes
+15,2026-2027,14-Sep-26,Ganesh Chaturthi,Holiday,No
+16,2026-2027,21-Sep-26,Half-Yearly / Term-1 Exams Start,Exam_Start,Yes
+17,2026-2027,30-Sep-26,Half-Yearly / Term-1 Exams Ends,Exam_End,Yes
+18,2026-2027,02-Oct-26,Gandhi Jayanti,Holiday,No
+19,2026-2027,20-Oct-26,Vijayadashami (Dussehra),Holiday,No
+20,2026-2027,26-Oct-26,Term-1 Result Declaration (PTM),Event,Yes
+21,2026-2027,06-Nov-26,Diwali / Mid-Term Break Starts,Vacation_Start,No
+22,2026-2027,12-Nov-26,Diwali / Mid-Term Break Ends,Vacation_End,No
+23,2026-2027,14-Nov-26,Children's Day,Celebration,Yes
+24,2026-2027,24-Nov-26,Guru Nanak Jayanti,Holiday,No
+25,2026-2027,01-Dec-26,Periodic Test - II (PT-2) Starts,Exam,Yes
+26,2026-2027,10-Dec-26,Periodic Test - II (PT-2) Ends,Exam,Yes
+27,2026-2027,25-Dec-26,Christmas Day,Holiday,No
+28,2026-2027,28-Dec-26,Winter Break Starts,Vacation_Start,No
+29,2026-2027,06-Jan-27,Winter Break Ends,Vacation_End,No
+30,2026-2027,14-Jan-27,Pre-Board Exams (Class 10 & 12) Starts,Exam,Yes
+31,2026-2027,23-Jan-27,Pre-Board Exams (Class 10 & 12) Ends,Exam,Yes
+32,2026-2027,26-Jan-27,Republic Day (Flag Hoisting),Holiday,No
+33,2026-2027,06-Mar-27,Maha Shivaratri,Holiday,No
+34,2026-2027,08-Mar-27,Annual Exams / Final Exams Start,Exam_Start,Yes
+35,2026-2027,19-Mar-27,Annual Exams / Final Exams Ends,Exam_End,Yes
+36,2026-2027,22-Mar-27,Holi,Holiday,No
+37,2026-2027,26-Mar-27,Good Friday,Holiday,No
+38,2026-2027,30-Mar-27,Annual Result Declaration (PTM),Event,Yes

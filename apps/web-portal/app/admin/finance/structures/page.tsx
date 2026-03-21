@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AuthGuard } from '../../../../components/AuthGuard';
 import { bffFetch } from '../../../../lib/api';
 import type { UserClaims } from '../../../../lib/auth';
+import { DateInput } from '../../../../components/ui/DateInput';
 import { PremiumCard } from '../../../../components/ui/PremiumCard';
 
 // ── Reference types ───────────────────────────────────────────────────────────
@@ -18,8 +19,8 @@ interface FeeStructure {
   academicYearId: string;
   classId: string;
   feeCategoryId: string;
-  amount: number;
-  dueDate: string;
+  amount: number | null;
+  dueDate: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -49,16 +50,17 @@ const EMPTY_CREATE: StructureForm = {
 
 function validateCreate(f: StructureForm): FormErrors {
   const e: FormErrors = {};
-  if (!f.academicYearId)            e.academicYearId = 'Academic year is required.';
-  if (!f.classId)                   e.classId        = 'Class is required.';
-  if (!f.feeCategoryId)             e.feeCategoryId  = 'Fee category is required.';
-  if (!f.amount || isNaN(parseFloat(f.amount)) || parseFloat(f.amount) <= 0)
-                                    e.amount         = 'Enter a valid positive amount.';
-  if (!f.dueDate)                   e.dueDate        = 'Due date is required.';
+  if (!f.academicYearId) e.academicYearId = 'Academic year is required.';
+  if (!f.classId)        e.classId        = 'Class is required.';
+  if (!f.feeCategoryId)  e.feeCategoryId  = 'Fee category is required.';
+  // Amount and dueDate are optional — they may be inherited from master template
+  if (f.amount && (isNaN(parseFloat(f.amount)) || parseFloat(f.amount) < 0))
+    e.amount = 'Amount must be zero or positive.';
   return e;
 }
 
-function formatCurrency(amount: number): string {
+function formatCurrency(amount: number | null): string {
+  if (amount == null) return '—';
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
@@ -67,7 +69,7 @@ function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
-function formatDate(d: string): string {
+function formatDate(d: string | null): string {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
 }
@@ -126,9 +128,8 @@ function StructurePanel({
     e.preventDefault();
     if (isEdit) {
       const errs: FormErrors = {};
-      if (!updateForm.amount || isNaN(parseFloat(updateForm.amount)) || parseFloat(updateForm.amount) <= 0)
-        errs.amount = 'Enter a valid positive amount.';
-      if (!updateForm.dueDate) errs.dueDate = 'Due date is required.';
+      if (updateForm.amount && (isNaN(parseFloat(updateForm.amount)) || parseFloat(updateForm.amount) < 0))
+        errs.amount = 'Amount must be zero or positive.';
       if (Object.keys(errs).length > 0) { setErrors(errs); return; }
       onSave(updateForm);
       return;
@@ -234,7 +235,7 @@ function StructurePanel({
           {/* Amount */}
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-              Amount (₹) <span className="text-red-500">*</span>
+              Amount (₹) <span className="text-slate-400 font-normal">(optional)</span>
             </label>
             <input
               type="number"
@@ -255,17 +256,16 @@ function StructurePanel({
           {/* Due Date */}
           <div>
             <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-              Due Date <span className="text-red-500">*</span>
+              Due Date <span className="text-slate-400 font-normal">(optional)</span>
             </label>
-            <input
-              type="date"
-              className={inputCls(errors.dueDate)}
+            <DateInput
               value={isEdit ? updateForm.dueDate : createForm.dueDate}
-              onChange={(e) =>
+              onValueChange={(v) =>
                 isEdit
-                  ? setUpdateForm((p) => ({ ...p, dueDate: e.target.value }))
-                  : setCreate('dueDate', e.target.value)
+                  ? setUpdateForm((p) => ({ ...p, dueDate: v }))
+                  : setCreate('dueDate', v)
               }
+              className={inputCls(errors.dueDate)}
             />
             {errors.dueDate && <p className="mt-1 text-xs text-red-600">{errors.dueDate}</p>}
           </div>
@@ -304,6 +304,7 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
   const [saving, setSaving]         = useState(false);
   const [deleting, setDeleting]     = useState<string | null>(null);
   const [banner, setBanner]         = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
+  const [generating, setGenerating] = useState(false);
 
   // Filter state
   const [filterYear, setFilterYear]   = useState('');
@@ -341,6 +342,22 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
 
   useEffect(() => { loadAll(); }, []);
 
+  async function handleGenerateFromMaster() {
+    setGenerating(true);
+    try {
+      const result = await bffFetch<{ categoriesCreated: number; categoriesSkipped: number; structuresCreated: number; structuresSkipped: number }>(
+        '/api/finance/generate-from-master',
+        { method: 'POST' },
+      );
+      showBanner('success', `Generated ${result.structuresCreated} structures, ${result.categoriesCreated} categories (skipped ${result.structuresSkipped + result.categoriesSkipped}).`);
+      await loadAll(filterYear || undefined, filterClass || undefined);
+    } catch (e) {
+      showBanner('error', e instanceof Error ? e.message : 'Generation from master failed.');
+    } finally {
+      setGenerating(false);
+    }
+  }
+
   const filteredClassesForFilter = useMemo(
     () => classes.filter((c) => !filterYear || c.academicYearId === filterYear),
     [classes, filterYear],
@@ -372,25 +389,26 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
     try {
       if (editing) {
         const f = form as UpdateForm;
+        const payload: Record<string, unknown> = {};
+        if (f.amount) payload.amount = parseFloat(f.amount);
+        if (f.dueDate) payload.dueDate = f.dueDate;
         await bffFetch(`/api/finance/fee-structures/${editing.id}`, {
           method: 'PATCH',
-          body: JSON.stringify({
-            amount: parseFloat(f.amount),
-            dueDate: f.dueDate,
-          }),
+          body: JSON.stringify(payload),
         });
         showBanner('success', 'Fee structure updated.');
       } else {
         const f = form as StructureForm;
+        const payload: Record<string, unknown> = {
+          academicYearId: f.academicYearId,
+          classId: f.classId,
+          feeCategoryId: f.feeCategoryId,
+        };
+        if (f.amount) payload.amount = parseFloat(f.amount);
+        if (f.dueDate) payload.dueDate = f.dueDate;
         await bffFetch('/api/finance/fee-structures', {
           method: 'POST',
-          body: JSON.stringify({
-            academicYearId: f.academicYearId,
-            classId: f.classId,
-            feeCategoryId: f.feeCategoryId,
-            amount: parseFloat(f.amount),
-            dueDate: f.dueDate,
-          }),
+          body: JSON.stringify(payload),
         });
         showBanner('success', 'Fee structure created.');
       }
@@ -427,12 +445,23 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
             Assign fee amounts and due dates to classes for each academic year.
           </p>
         </div>
-        <button
-          onClick={openCreate}
-          className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 transition-colors"
-        >
-          + New Structure
-        </button>
+        <div className="flex items-center gap-3">
+          {rows.length === 0 && !loading && (
+            <button
+              onClick={handleGenerateFromMaster}
+              disabled={generating}
+              className="rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-violet-700 disabled:opacity-50 transition-colors"
+            >
+              {generating ? 'Generating…' : 'Generate from Master Data'}
+            </button>
+          )}
+          <button
+            onClick={openCreate}
+            className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow hover:bg-green-700 transition-colors"
+          >
+            + New Structure
+          </button>
+        </div>
       </div>
 
       {/* Banner */}

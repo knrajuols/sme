@@ -1,0 +1,20 @@
+
+
+1. The Technical Gap: Timezone Sync (Critical)
+Opus mentioned "Auto-captures client time."
+
+The Risk: If a teacher’s phone or laptop is set 5 minutes fast, or if they are using a VPN, the Swipe-In time will be inconsistent with the server. In a "Governance" model, timestamps should ideally come from the Server to prevent users from manually changing their local clock to "fake" an on-time arrival.
+
+The Fix: For the demo, client-time is fine. But for production, the BFF should ideally append the server-side Date.now() when the "P" or "Swipe Out" request hits the API.
+
+2. The Functional Gap: The "Working Day" Edge Case
+The Issue: You have a "Day" view and a "Monthly" view.
+
+The Gap: If a teacher takes attendance but doesn't lock it, does it show up in the Monthly Report?
+
+The Requirement: Usually, reports should only count "Locked" days to ensure the data is verified. You should check if the report aggregation logic filters for status === 1. If it includes "Draft" days, the Principal might see "Total Working Days" fluctuating while a teacher is still typing.
+
+3. The "Demo" Observation: Decimal Precision
+The Detail: For Avg Swipe-In/Out, ensure the math handles the "minutes to HH:mm" conversion cleanly. If a teacher swipes at 09:00 and another at 09:10, the average is 09:05. If the system shows 9.0833, it looks "unpolished."
+
+The Fix: Ensure the UI applies a Math.round() or a proper time-string formatter to that average.

@@ -16,6 +16,7 @@ import { AcademicService } from './academic.service';
 import { AssignClassTeacherDto } from './dto/assign-class-teacher.dto';
 import { AssignTeacherSubjectsDto } from './dto/assign-teacher-subjects.dto';
 import { BulkAttendanceDto } from './dto/create-bulk-attendance.dto';
+import { SaveAttendanceLogDto } from './dto/save-attendance-log.dto';
 import { BulkMarksDto } from './dto/create-bulk-marks.dto';
 import { CreateGradeScaleDto } from './dto/create-grade-scale.dto';
 import { UpdateGradeScaleDto } from './dto/update-grade-scale.dto';
@@ -29,6 +30,8 @@ import { CreateParentDto } from './dto/create-parent.dto';
 import { CreateParentStudentMappingDto } from './dto/create-parent-student-mapping.dto';
 import { CreatePeriodDto } from './dto/create-period.dto';
 import { CreateSectionDto } from './dto/create-section.dto';
+import { CreateClassSectionDto } from './dto/create-class-section.dto';
+import { UpdateClassSectionDto } from './dto/update-class-section.dto';
 import { SeedSectionsDto } from './dto/seed-sections.dto';
 import { CreateStudentEnrollmentDto } from './dto/create-student-enrollment.dto';
 import { CreateStudentDto } from './dto/create-student.dto';
@@ -44,6 +47,13 @@ import { UpdateStudentDto } from './dto/update-student.dto';
 import { UpdateStudentEnrollmentDto } from './dto/update-student-enrollment.dto';
 import { UpdateSubjectDto } from './dto/update-subject.dto';
 import { UpdateTeacherDto } from './dto/update-teacher.dto';
+import {
+  SaveWeekendConfigDto,
+  SaveMatrixRulesDto,
+  GenerateHolidaysDto,
+  CreateHolidayEntryDto,
+  UpdateHolidayEntryDto,
+} from './dto/holiday-engine.dto';
 
 @ApiTags('Academic')
 @Controller('academic')
@@ -231,13 +241,12 @@ export class AcademicController {
   }
 
   @Get('sections')
-  @ApiOperation({ summary: 'List sections for tenant (optionally filtered by classId)' })
+  @ApiOperation({ summary: 'List sections for tenant' })
   @Permissions('SECTION_CREATE')
   async listSections(
     @CurrentTenant() tenantId: string,
-    @Query('classId') classId?: string,
-  ): Promise<Array<{ id: string; name: string; classId: string | null; className: string | null; createdAt: Date; updatedAt: Date }>> {
-    return this.academicService.listSections(tenantId, classId);
+  ): Promise<Array<{ id: string; name: string; createdAt: Date; updatedAt: Date }>> {
+    return this.academicService.listSections(tenantId);
   }
 
   @Post('sections')
@@ -285,6 +294,70 @@ export class AcademicController {
     @Headers('x-correlation-id') correlationIdHeader?: string,
   ): Promise<{ deleted: boolean }> {
     return this.academicService.deleteSection(id, {
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  // ── Class Sections ─────────────────────────────────────────────────────────
+
+  @Get('class-sections')
+  @ApiOperation({ summary: 'List class-section assignments (optionally filtered by classId)' })
+  @Permissions('SECTION_CREATE')
+  async listClassSections(
+    @CurrentTenant() tenantId: string,
+    @Query('classId') classId?: string,
+  ): Promise<Array<{ id: string; name: string; classId: string; className: string; sectionId: string; sectionName: string; createdAt: Date; updatedAt: Date }>> {
+    return this.academicService.listClassSections(tenantId, classId);
+  }
+
+  @Post('class-sections')
+  @ApiOperation({ summary: 'Assign a section to a class with a display name' })
+  @Permissions('SECTION_CREATE')
+  async createClassSection(
+    @Body() dto: CreateClassSectionDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ id: string }> {
+    return this.academicService.createClassSection(dto, {
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Patch('class-sections/:id')
+  @ApiOperation({ summary: 'Update class-section display name' })
+  @Permissions('SECTION_CREATE')
+  async updateClassSection(
+    @Param('id') id: string,
+    @Body() dto: UpdateClassSectionDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ updated: boolean }> {
+    return this.academicService.updateClassSection(id, dto, {
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Delete('class-sections/:id')
+  @ApiOperation({ summary: 'Soft-delete class-section assignment' })
+  @Permissions('SECTION_CREATE')
+  async deleteClassSection(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ deleted: boolean }> {
+    return this.academicService.deleteClassSection(id, {
       tenantId,
       userId: user.sub,
       role: user.roles[0] ?? 'USER',
@@ -770,14 +843,16 @@ export class AcademicController {
   // ── Enrollments (/academic/enrollments) ───────────────────────────────────
 
   @Get('enrollments')
-  @ApiOperation({ summary: 'List all enrollments (optionally filter by studentId or academicYearId)' })
+  @ApiOperation({ summary: 'List all enrollments (optionally filter by studentId, academicYearId, classId, sectionId)' })
   @Permissions('STUDENT_CREATE')
   async listEnrollmentsV2(
     @CurrentTenant() tenantId: string,
     @Query('studentId') studentId?: string,
     @Query('academicYearId') academicYearId?: string,
+    @Query('classId') classId?: string,
+    @Query('sectionId') sectionId?: string,
   ) {
-    return this.academicService.listEnrollments(tenantId, studentId, academicYearId);
+    return this.academicService.listEnrollments(tenantId, studentId, academicYearId, classId, sectionId);
   }
 
   @Post('enrollments')
@@ -976,6 +1051,70 @@ export class AcademicController {
     });
   }
 
+  @Post('years/seed-from-master')
+  @ApiOperation({ summary: 'Copy master template academic years into this school' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async seedAcademicYearsFromMaster(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ seeded: number }> {
+    return this.academicService.seedAcademicYearsFromMaster({
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Post('classes/seed-from-master')
+  @ApiOperation({ summary: 'Copy master template classes into this school linked to active academic year' })
+  @Permissions('CLASS_CREATE')
+  async seedClassesFromMaster(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ seeded: number }> {
+    return this.academicService.seedClassesFromMaster({
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Post('sections/seed-from-master')
+  @ApiOperation({ summary: 'Copy master template section pool into this school' })
+  @Permissions('CLASS_CREATE')
+  async seedSectionsFromMaster(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ seeded: number }> {
+    return this.academicService.seedSectionsFromMaster({
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Post('subjects/seed-from-master')
+  @ApiOperation({ summary: 'Copy master template subjects into this school' })
+  @Permissions('CLASS_CREATE')
+  async seedSubjectsFromMaster(
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ seeded: number }> {
+    return this.academicService.seedSubjectsFromMaster({
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
   @Get('periods/:id')
   @ApiOperation({ summary: 'Get a single period' })
   @Permissions('ACADEMIC_YEAR_CREATE')
@@ -1062,6 +1201,80 @@ export class AcademicController {
     @CurrentTenant() tenantId: string,
   ) {
     return this.academicService.getAttendanceSession(id, tenantId);
+  }
+
+  // ── Event-Blob Attendance Log ────────────────────────────────────────────────
+
+  @Post('attendance/log')
+  @ApiOperation({ summary: 'Save daily attendance log (Event-Blob: one row per class per day)' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('STUDENT_CREATE')
+  async saveAttendanceLog(
+    @Body() dto: SaveAttendanceLogDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ id: string; created: boolean }> {
+    return this.academicService.saveAttendanceLog(dto, {
+      tenantId,
+      userId: user.sub,
+      role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Get('attendance/log')
+  @ApiOperation({ summary: 'Get daily attendance log blob by date + class + section' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('STUDENT_CREATE')
+  async getAttendanceLog(
+    @Query('date') date: string,
+    @Query('classId') classId: string,
+    @Query('sectionId') sectionId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.getAttendanceLog(tenantId, date, classId, sectionId);
+  }
+
+  @Get('attendance/holiday-status')
+  @ApiOperation({ summary: 'Get holiday status for a specific date in an academic year' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('STUDENT_CREATE')
+  async getHolidayStatus(
+    @Query('date') date: string,
+    @Query('academicYearId') academicYearId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.getHolidayStatus(tenantId, academicYearId, date);
+  }
+
+  @Post('attendance/log/:id/lock')
+  @ApiOperation({ summary: 'Lock or unlock a daily attendance log' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('STUDENT_CREATE')
+  async lockAttendanceLog(
+    @Param('id') id: string,
+    @Query('lock') lock: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+  ): Promise<{ id: string; status: number }> {
+    return this.academicService.lockAttendanceLog(tenantId, id, lock !== 'false', user.sub);
+  }
+
+  @Get('attendance/report')
+  @ApiOperation({ summary: 'Attendance aggregation report for a class+section over a date range' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('STUDENT_CREATE')
+  async getAttendanceReport(
+    @Query('classId') classId: string,
+    @Query('sectionId') sectionId: string,
+    @Query('startDate') startDate: string,
+    @Query('endDate') endDate: string,
+    @Query('viewType') viewType: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    const vt = viewType === 'teachers' ? 'teachers' : 'students';
+    return this.academicService.getAttendanceReport(tenantId, classId, sectionId, startDate, endDate, vt);
   }
 
   // ── GradeScale ───────────────────────────────────────────────────────────────
@@ -1287,6 +1500,66 @@ export class AcademicController {
     return this.academicService.listMarks(tenantId, examSubjectId, sectionId);
   }
 
+  @Get('marks/analytics')
+  @ApiOperation({ summary: 'Per-subject mark analytics (max, 2nd, 3rd, min, avg) for an exam + section' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async getMarkAnalytics(
+    @Query('examId') examId: string,
+    @Query('sectionId') sectionId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.getMarkAnalytics(tenantId, examId, sectionId);
+  }
+
+  @Post('marks/lock-attendance')
+  @ApiOperation({ summary: 'Lock attendance for an exam + section (disables absent checkboxes)' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async lockAttendance(
+    @Body() body: { examId: string; sectionId: string },
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ locked: boolean }> {
+    return this.academicService.lockAttendance(body.examId, body.sectionId, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Get('marks/attendance-lock')
+  @ApiOperation({ summary: 'Get attendance lock status for an exam + section' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async getAttendanceLockStatus(
+    @Query('examId') examId: string,
+    @Query('sectionId') sectionId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.getAttendanceLockStatus(tenantId, examId, sectionId);
+  }
+
+  @Get('grade-scales')
+  @ApiOperation({ summary: 'Get MASTER_TEMPLATE grade scales for analytics use' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async getMasterGradeScalesForPortal(@CurrentTenant() _tenantId: string) {
+    return this.academicService.listGradeScales('MASTER_TEMPLATE');
+  }
+
+  @Get('marks/ranks')
+  @ApiOperation({ summary: 'Get marks, grades and ranks matrix for exam + section' })
+  @Roles('SCHOOL_ADMIN', 'TEACHER')
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async getMarksRanks(
+    @Query('examId') examId: string,
+    @Query('sectionId') sectionId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.getMarksRanks(tenantId, examId, sectionId);
+  }
+
   @Post('exams/:examId/classes/:classId/process')
   @ApiOperation({ summary: 'Process and aggregate exam results for a class' })
   @Permissions('ACADEMIC_YEAR_CREATE')
@@ -1327,5 +1600,187 @@ export class AcademicController {
     @CurrentUser()   user: JwtClaims,
   ): Promise<{ seeded: number }> {
     return this.academicService.seedDefaultSetup(tenantId, user.sub);
+  }
+
+  // ── Holiday Engine (Tenant-Scoped) ──────────────────────────────────────────
+
+  @Post('holidays/weekend-config')
+  @ApiOperation({ summary: 'Save weekend holiday configuration for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async saveWeekendConfig(
+    @Body() dto: SaveWeekendConfigDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.saveWeekendConfig(dto, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Get('holidays/weekend-config')
+  @ApiOperation({ summary: 'Get weekend holiday configuration for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async getWeekendConfig(
+    @Query('academicYearId') academicYearId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.getWeekendConfig(tenantId, academicYearId);
+  }
+
+  @Post('holidays/matrix-rules')
+  @ApiOperation({ summary: 'Save monthly holiday matrix rules for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async saveMatrixRules(
+    @Body() dto: SaveMatrixRulesDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.saveMatrixRules(dto, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Get('holidays/matrix-rules')
+  @ApiOperation({ summary: 'Get monthly holiday matrix rules for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async getMatrixRules(
+    @Query('academicYearId') academicYearId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.getMatrixRules(tenantId, academicYearId);
+  }
+
+  @Post('holidays/generate')
+  @ApiOperation({ summary: 'Generate holidays from calendar + weekend + matrix for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async generateHolidays(
+    @Body() dto: GenerateHolidaysDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.generateHolidays(tenantId, dto.academicYearId, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    }, false);
+  }
+
+  @Post('holidays/preview')
+  @ApiOperation({ summary: 'Preview generated holidays without saving for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async previewHolidays(
+    @Body() dto: GenerateHolidaysDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.generateHolidays(tenantId, dto.academicYearId, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    }, true, dto.weekendDays, dto.matrixRules);
+  }
+
+  @Get('holidays')
+  @ApiOperation({ summary: 'List holiday entries for tenant academic year' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async listHolidays(
+    @Query('academicYearId') academicYearId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.listHolidays(tenantId, academicYearId);
+  }
+
+  @Post('holidays')
+  @ApiOperation({ summary: 'Create a manual holiday entry for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async createHolidayEntry(
+    @Body() dto: CreateHolidayEntryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.createHolidayEntry(dto, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Patch('holidays/:id')
+  @ApiOperation({ summary: 'Update a holiday entry for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async updateHolidayEntry(
+    @Param('id') id: string,
+    @Body() dto: UpdateHolidayEntryDto,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.updateHolidayEntry(id, dto, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Delete('holidays/:id')
+  @ApiOperation({ summary: 'Soft-delete a holiday entry for tenant' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async deleteHolidayEntry(
+    @Param('id') id: string,
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.deleteHolidayEntry(id, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  // ── Academic Calendar (Tenant-Scoped) ───────────────────────────────────────
+
+  @Get('academic-calendar')
+  @ApiOperation({ summary: 'List academic calendar entries for tenant academic year' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async listCalendar(
+    @Query('academicYearId') academicYearId: string,
+    @CurrentTenant() tenantId: string,
+  ) {
+    return this.academicService.listAcademicCalendar(tenantId, academicYearId);
+  }
+
+  // ── Clone from Master Data ──────────────────────────────────────────────────
+
+  @Post('clone/academic-calendar')
+  @ApiOperation({ summary: 'Clone academic calendar entries from MASTER_TEMPLATE' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async cloneAcademicCalendar(
+    @Body() body: { academicYearId: string },
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.cloneAcademicCalendarFromMaster(body.academicYearId, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  @Post('clone/holidays')
+  @ApiOperation({ summary: 'Clone holidays (weekend + matrix + entries) from MASTER_TEMPLATE' })
+  @Permissions('ACADEMIC_YEAR_CREATE')
+  async cloneHolidays(
+    @Body() body: { academicYearId: string },
+    @CurrentTenant() tenantId: string,
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ) {
+    return this.academicService.cloneHolidaysFromMaster(body.academicYearId, {
+      tenantId, userId: user.sub, role: user.roles[0] ?? 'USER',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
   }
 }
