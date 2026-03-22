@@ -1,7 +1,5 @@
 {
   "/login/page": "app/login/page.js",
-  "/admin/transport/staff/page": "app/admin/transport/staff/page.js",
-  "/admin/hr/onboard/page": "app/admin/hr/onboard/page.js",
-  "/admin/faculty/page": "app/admin/faculty/page.js",
-  "/admin/hr/roles/page": "app/admin/hr/roles/page.js"
+  "/api/tenant/branding/[code]/route": "app/api/tenant/branding/[code]/route.js",
+  "/admin/dashboard/page": "app/admin/dashboard/page.js"
 }

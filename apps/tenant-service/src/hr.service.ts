@@ -47,10 +47,10 @@ export class HrService {
     return this.prisma.department.findMany({
       where: { tenantId, softDelete: false },
       include: {
-        parent: { select: { id: true, name: true, code: true } },
+        parent: { select: { id: true, name: true, code: true, division: true } },
         children: {
           where: { softDelete: false },
-          select: { id: true, name: true, code: true, isActive: true },
+          select: { id: true, name: true, code: true, isActive: true, division: true },
         },
       },
       orderBy: { name: 'asc' },
@@ -73,6 +73,7 @@ export class HrService {
         tenantId: ctx.tenantId,
         name: dto.name,
         code: dto.code,
+        division: dto.division ?? null,
         parentId: dto.parentId ?? null,
         isActive: dto.isActive ?? true,
         createdBy: ctx.userId,
@@ -100,6 +101,7 @@ export class HrService {
     const data: Record<string, unknown> = { updatedBy: ctx.userId };
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.code !== undefined) data.code = dto.code;
+    if (dto.division !== undefined) data.division = dto.division;
     if (dto.parentId !== undefined) data.parentId = dto.parentId;
     if (dto.isActive !== undefined) data.isActive = dto.isActive;
 
@@ -131,7 +133,7 @@ export class HrService {
         ...(departmentId ? { departmentId } : {}),
       },
       include: {
-        department: { select: { id: true, name: true, code: true } },
+        department: { select: { id: true, name: true, code: true, division: true } },
       },
       orderBy: { name: 'asc' },
     });
@@ -535,12 +537,17 @@ export class HrService {
 
       for (const group of ORG_SEED) {
         // Upsert the parent grouping department
+        const divisionName = group.grouping.name;
         let parentId: string;
         if (existingDeptCodes.has(group.grouping.code)) {
           const existing = await tx.department.findFirst({
             where: { tenantId: ctx.tenantId, code: group.grouping.code, softDelete: false },
           });
           parentId = existing!.id;
+          // Backfill division on existing parent if missing
+          if (!existing!.division) {
+            await tx.department.update({ where: { id: parentId }, data: { division: divisionName } });
+          }
         } else {
           parentId = randomUUID();
           await tx.department.create({
@@ -549,6 +556,7 @@ export class HrService {
               tenantId: ctx.tenantId,
               name: group.grouping.name,
               code: group.grouping.code,
+              division: divisionName,
               parentId: null,
               isActive: true,
               createdBy: ctx.userId,
@@ -560,13 +568,17 @@ export class HrService {
         }
 
         for (const dept of group.departments) {
-          // Upsert the child department
+          // Upsert the child department — forward-fill division from grouping
           let deptId: string;
           if (existingDeptCodes.has(dept.code)) {
             const existing = await tx.department.findFirst({
               where: { tenantId: ctx.tenantId, code: dept.code, softDelete: false },
             });
             deptId = existing!.id;
+            // Backfill division on existing child if missing
+            if (!existing!.division) {
+              await tx.department.update({ where: { id: deptId }, data: { division: divisionName } });
+            }
           } else {
             deptId = randomUUID();
             await tx.department.create({
@@ -575,6 +587,7 @@ export class HrService {
                 tenantId: ctx.tenantId,
                 name: dept.name,
                 code: dept.code,
+                division: divisionName,
                 parentId,
                 isActive: true,
                 createdBy: ctx.userId,
@@ -686,6 +699,7 @@ export class HrService {
             tenantId: ctx.tenantId,
             name: md.name,
             code: md.code,
+            division: md.division ?? null,
             parentId: null,
             isActive: true,
             createdBy: ctx.userId,
@@ -713,6 +727,7 @@ export class HrService {
             tenantId: ctx.tenantId,
             name: md.name,
             code: md.code,
+            division: md.division ?? null,
             parentId: newParentId,
             isActive: true,
             createdBy: ctx.userId,

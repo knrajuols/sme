@@ -1789,6 +1789,9 @@ model Department {
   code     String  @db.VarChar(20)
   isActive Boolean @default(true)
 
+  // Organizational Division grouping (e.g. "Core Academics", "Administration")
+  division String? @db.VarChar(100)
+
   // Self-referencing hierarchy: null parentId = root department
   parentId String?
 

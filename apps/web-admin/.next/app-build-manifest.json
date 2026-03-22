@@ -16,25 +16,15 @@
       "static/chunks/main-app.js",
       "static/chunks/app/login/page.js"
     ],
-    "/master-data/fee-structures/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/master-data/fee-structures/page.js"
-    ],
-    "/master-data/classes/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/master-data/classes/page.js"
-    ],
     "/dashboard/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/dashboard/page.js"
     ],
-    "/master-data/subjects/page": [
+    "/master-data/org-structure/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/master-data/subjects/page.js"
+      "static/chunks/app/master-data/org-structure/page.js"
     ]
   }
 }

@@ -14,6 +14,10 @@ export class CreateDepartmentDto {
   @IsString() @MinLength(2) @MaxLength(20)
   code!: string;
 
+  @ApiPropertyOptional({ example: 'Core Academics', description: 'Organizational Division grouping' })
+  @IsOptional() @IsString() @MaxLength(100)
+  division?: string;
+
   @ApiPropertyOptional({ description: 'Parent department ID for hierarchical nesting' })
   @IsOptional() @IsString()
   parentId?: string;
@@ -31,6 +35,10 @@ export class UpdateDepartmentDto {
   @ApiPropertyOptional({ example: 'SCI' })
   @IsOptional() @IsString() @MinLength(2) @MaxLength(20)
   code?: string;
+
+  @ApiPropertyOptional({ example: 'Core Academics', description: 'Organizational Division grouping' })
+  @IsOptional() @IsString() @MaxLength(100)
+  division?: string | null;
 
   @ApiPropertyOptional()
   @IsOptional() @IsString()
