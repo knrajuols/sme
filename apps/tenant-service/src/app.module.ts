@@ -20,6 +20,8 @@ import { ExamController } from './exam.controller';
 import { ExamService } from './exam.service';
 import { ExamScheduleController } from './exam-schedule.controller';
 import { HealthController } from './health.controller';
+import { HrController } from './hr.controller';
+import { HrService } from './hr.service';
 import { PlatformController } from './platform.controller';
 import { FinanceController } from './finance.controller';
 import { FinanceService } from './finance.service';
@@ -28,9 +30,15 @@ import { PortalService } from './portal.service';
 import { TimetableController } from './timetable.controller';
 import { TimetableService } from './timetable.service';
 import { TransportController } from './transport.controller';
+import { TransportPortalController } from './transport-portal.controller';
 import { TransportService } from './transport.service';
 import { TransportAllocationController } from './transport-allocation.controller';
+import { TransportAllocationPortalController } from './transport-allocation-portal.controller';
 import { TransportAllocationService } from './transport-allocation.service';
+import { TransportAnalyticsPortalController } from './transport-analytics-portal.controller';
+import { TransportAnalyticsService } from './transport-analytics.service';
+import { StaffAuthController } from './staff-auth.controller';
+import { StaffAuthService } from './staff-auth.service';
 import { WebAdminController } from './web-admin.controller';
 import { PrismaModule } from './prisma/prisma.module';
 import { RabbitMqSetupService } from './rabbitmq-setup.service';
@@ -66,8 +74,13 @@ const appRoot = dirname(process.env.npm_package_json ?? join(process.cwd(), 'pac
     TimetableController,
     WebAdminController,
     ExamScheduleController,
+    HrController,
     TransportController,
+    TransportPortalController,
     TransportAllocationController,
+    TransportAllocationPortalController,
+    TransportAnalyticsPortalController,
+    StaffAuthController,
   ],
   providers: [
     AppService,
@@ -75,6 +88,7 @@ const appRoot = dirname(process.env.npm_package_json ?? join(process.cwd(), 'pac
     AcademicService,
     AttendanceService,
     ExamService,
+    HrService,
     AnalyticsService,
     DashboardService,
     PortalService,
@@ -82,6 +96,8 @@ const appRoot = dirname(process.env.npm_package_json ?? join(process.cwd(), 'pac
     TimetableService,
     TransportService,
     TransportAllocationService,
+    TransportAnalyticsService,
+    StaffAuthService,
   ],
 })
 export class AppModule {}

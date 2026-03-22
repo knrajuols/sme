@@ -326,6 +326,7 @@ function MasterClassesContent() {
     { key: 'name', direction: 'asc' }
   );
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterYear, setFilterYear] = useState('');
 
   const collator = useMemo(
     () => new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }),
@@ -334,16 +335,22 @@ function MasterClassesContent() {
 
   const sortedClasses = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    const filtered = q
-      ? (Array.isArray(classes) ? classes : []).filter(
-          (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
-        )
+    const byYear = filterYear
+      ? (Array.isArray(classes) ? classes : []).filter((c) => c.academicYearId === filterYear)
       : (Array.isArray(classes) ? classes : []);
+    const filtered = q
+      ? byYear.filter((c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
+      : byYear;
     return [...filtered].sort((a, b) => {
       const cmp = collator.compare(a[sortConfig.key], b[sortConfig.key]);
       return sortConfig.direction === 'asc' ? cmp : -cmp;
     });
-  }, [classes, sortConfig, collator, searchTerm]);
+  }, [classes, sortConfig, collator, searchTerm, filterYear]);
+
+  const classesForYear = useMemo(() => {
+    if (!filterYear) return Array.isArray(classes) ? classes : [];
+    return (Array.isArray(classes) ? classes : []).filter((c) => c.academicYearId === filterYear);
+  }, [classes, filterYear]);
 
   function toggleSort(key: SortKey) {
     setSortConfig((prev) =>
@@ -383,8 +390,12 @@ function MasterClassesContent() {
     setSeeding(true);
     setErrorMsg('');
     try {
-      await bffFetch<{ seeded: number }>('/api/web-admin/classes/seed', { method: 'POST' });
-      setSuccessMsg('12 classes (Class 1 \u2013 Class 12) generated successfully.');
+      await bffFetch<{ seeded: number }>('/api/web-admin/classes/seed', {
+        method: 'POST',
+        body: filterYear ? JSON.stringify({ academicYearId: filterYear }) : undefined,
+      });
+      const yearLabel = filterYear ? (years.find((y) => y.id === filterYear)?.name ?? '') : '';
+      setSuccessMsg(`12 classes (Class 1 \u2013 Class 12) generated successfully${yearLabel ? ` for ${yearLabel}` : ''}.`);
       await fetchClasses();
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to generate sample classes');
@@ -479,7 +490,7 @@ function MasterClassesContent() {
           <p className="text-sm text-slate-500 mt-0.5">Manage master template class levels.</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
-          {classes.length === 0 && !loading && (
+          {classesForYear.length === 0 && !loading && (
             <button
               type="button"
               onClick={() => void handleSeed()}
@@ -511,6 +522,23 @@ function MasterClassesContent() {
           </button>
         </div>
       </div>
+
+      {/* Year filter */}
+      {!loading && !loadError && years.length > 0 && (
+        <div className="mb-4 flex items-center gap-3">
+          <label className="text-xs font-semibold text-slate-500 whitespace-nowrap">Filter by Year:</label>
+          <select
+            value={filterYear}
+            onChange={(e) => { setFilterYear(e.target.value); setSearchTerm(''); }}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm text-slate-700 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all"
+          >
+            <option value="">All Years</option>
+            {years.map((y) => (
+              <option key={y.id} value={y.id}>{y.name}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Search bar */}
       {!loading && !loadError && classes.length > 0 && (

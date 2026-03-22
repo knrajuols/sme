@@ -4,6 +4,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ApiKeyGuard } from './guards/api-key.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { PermissionGuard } from './guards/permission.guard';
+import { RequireSetupGuard } from './guards/require-setup.guard';
 import { TenantScopeGuard } from './guards/tenant-scope.guard';
 import { JwtTokenService } from './services/jwt-token.service';
 
@@ -18,6 +19,10 @@ import { JwtTokenService } from './services/jwt-token.service';
     {
       provide: APP_GUARD,
       useClass: TenantScopeGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RequireSetupGuard,
     },
     {
       provide: APP_GUARD,

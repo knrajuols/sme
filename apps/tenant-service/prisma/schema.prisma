@@ -247,6 +247,10 @@ model Tenant {
   stops                   Stop[]
   transportRoutes         TransportRoute[]
   TransportAllocation     TransportAllocation[]
+  // HR / Employee Backbone
+  departments             Department[]
+  employeeRoles           EmployeeRole[]
+  employees               Employee[]
 }
 
 // key is now sized; FK added — no orphan settings survive tenant deletion.
@@ -490,46 +494,34 @@ model Teacher {
   designation  String  @db.VarChar(100)
   isActive     Boolean @default(true)
 
-  // ── Personal Identity ─────────────────────────────────────────────────────
-  // AI ADDED: Full name mirrored here for reports that bypass IAM user join
-  firstName      String?   @db.VarChar(100)
-  lastName       String?   @db.VarChar(100)
+  // ── Unified Employee Backbone (1-to-1) ────────────────────────────────────
+  // PII (firstName, lastName, contactPhone, email) now lives on Employee.
+  employeeId String @unique
+
+  // ── Personal Identity (domain-specific, NOT PII) ──────────────────────────
   dateOfBirth    DateTime? @db.Date
   gender         Gender    @default(PREFER_NOT_TO_SAY)
   motherTongue   String?   @db.VarChar(50)
-  // AI ADDED: Languages known — for class assignment matching in regional-medium schools
   knownLanguages String?   @db.VarChar(200)
-  // AI ADDED: Nationality — needed for foreign faculty compliance
   nationality    String    @default("Indian") @db.VarChar(50)
 
-  // ── Contact ───────────────────────────────────────────────────────────────
-  contactPhone     String? @db.VarChar(20)
-  email            String? @db.VarChar(200)
-  // AI ADDED: Alternate emergency contact — required by school HR policies
+  // ── Contact (emergency only — primary contact is on Employee) ─────────────
   emergencyContact String? @db.VarChar(500)
 
   // ── Employment ────────────────────────────────────────────────────────────
   dateOfJoining         DateTime? @db.Date
-  // AI ADDED: Date of leaving — preserves HR record when teacher is soft-deleted
   dateOfLeaving         DateTime? @db.Date
-  // AI ADDED: Employment type — Regular / Contract / Guest; affects payroll and compliance
   employmentType        String?   @db.VarChar(50)
-  // AI ADDED: Subject specialisation(s) — comma-separated; aids timetable engine
   subjectSpecialization String?   @db.VarChar(200)
 
   // ── Qualifications & Compliance ───────────────────────────────────────────
-  // Stored as structured JSON string: [{degree, institution, year}]
   qualifications   String?         @db.VarChar(1000)
-  // AI ADDED: Teaching licence / TET / CTET certificate number — RTE compliance
   tetCertificateNo String?         @db.VarChar(50)
-  // AI ADDED: Category (SC/ST/OBC/GEN) — required for staff diversity reporting
   category         StudentCategory @default(GENERAL)
   religion         Religion        @default(NOT_STATED)
-  // AI ADDED: Aadhaar masked — required for PFMS salary transfer and govt audit
   aadhaarMasked    String?         @db.VarChar(10)
 
   // ── Photo ─────────────────────────────────────────────────────────────────
-  // AI ADDED: Object-storage URL for staff photo
   photoUrl String? @db.VarChar(500)
 
   // ── Audit ─────────────────────────────────────────────────────────────────
@@ -541,20 +533,18 @@ model Teacher {
 
   // FK-enforced tenant isolation — every teacher belongs to exactly one tenant.
   tenant           Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee         Employee                 @relation(fields: [employeeId], references: [id], onDelete: Restrict)
   assignments      ClassTeacherAssignment[]
-  // AI ADDED: Sections where this teacher is designated class teacher
   classSections    Section[]
-  // M2M: explicit join table preserves tenant isolation in the relationship itself.
   teacherSubjects  TeacherSubject[]
   classTimetables  ClassTimetable[]
   timeTableEntries TimeTableEntry[]
 
   @@unique([tenantId, userId])
   @@unique([tenantId, employeeCode])
-  @@unique([tenantId, email])
   @@index([tenantId])
-  // AI ADDED: Employment type filter for HR reports
   @@index([tenantId, employmentType])
+  @@index([employeeId])
 }
 
 model Student {
@@ -1542,8 +1532,12 @@ model HolidayEntry {
 model Driver {
   id                       String    @id @default(uuid())
   tenantId                 String    @db.VarChar(50)
-  name                     String    @db.VarChar(200)
-  mobile                   String    @db.VarChar(20)
+
+  // ── Unified Employee Backbone (1-to-1) ────────────────────────────────────
+  // PII (name, mobile) now lives on Employee.
+  employeeId               String    @unique
+
+  // ── Transport-specific domain fields ──────────────────────────────────────
   licenseNumber            String    @db.VarChar(50)
   licenseExpiry            DateTime
   badgeNumber              String?   @db.VarChar(50)
@@ -1558,18 +1552,24 @@ model Driver {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  trips  RouteTrip[]
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  trips    RouteTrip[]
 
   @@unique([tenantId, licenseNumber])
   @@index([tenantId])
+  @@index([employeeId])
 }
 
 model Attendant {
   id                       String    @id @default(uuid())
   tenantId                 String    @db.VarChar(50)
-  name                     String    @db.VarChar(200)
-  mobile                   String    @db.VarChar(20)
+
+  // ── Unified Employee Backbone (1-to-1) ────────────────────────────────────
+  // PII (name, mobile) now lives on Employee.
+  employeeId               String    @unique
+
+  // ── Transport-specific domain fields ──────────────────────────────────────
   policeVerificationStatus String?   @db.VarChar(30)
   isActive                 Boolean   @default(true)
   deletedAt                DateTime?
@@ -1580,10 +1580,12 @@ model Attendant {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  tenant Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  trips  RouteTrip[]
+  tenant   Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  employee Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  trips    RouteTrip[]
 
   @@index([tenantId])
+  @@index([employeeId])
 }
 
 // ─── Fleet Management ───────────────────────────────────────────────────────
@@ -1771,4 +1773,176 @@ model TransportAllocation {
   @@index([routeId])
   @@index([pickupTripId])
   @@index([dropTripId])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ═══  UNIFIED HR / EMPLOYEE BACKBONE  ════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ─── Department (hierarchical, self-referencing) ────────────────────────────
+// Supports nested sub-departments via parentId (e.g., Academics -> Science).
+// Code is used as a prefix for employee ID generation (e.g., ACAD, TRNS).
+model Department {
+  id       String  @id @default(uuid())
+  tenantId String  @db.VarChar(50)
+  name     String  @db.VarChar(200)
+  code     String  @db.VarChar(20)
+  isActive Boolean @default(true)
+
+  // Self-referencing hierarchy: null parentId = root department
+  parentId String?
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant    Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent    Department?  @relation("DepartmentHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children  Department[] @relation("DepartmentHierarchy")
+  employees Employee[]
+  roles     EmployeeRole[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, parentId])
+}
+
+// ─── System Role Category ───────────────────────────────────────────────────
+// Drives onboarding-form routing — tells the UI which specialised form
+// (e.g. Driver-License, Teaching-Subjects) to present for a given role.
+// Expanded per Prompt #300: Granular Master Seeding & Tenant Cloning.
+enum SystemRoleCategory {
+  // ── Legacy (backward-compatible) ──
+  TEACHER
+  DRIVER
+  ATTENDANT
+  STANDARD_STAFF
+
+  // ── Core Academics ──
+  ACADEMIC_STAFF
+  ACADEMIC_HOD
+  ACADEMIC_COORDINATOR
+  EXAM_COORDINATOR
+  EXAM_INVIGILATOR
+  DIGITAL_CONTENT_CREATOR
+  LMS_ADMIN
+  CURRICULUM_DESIGNER
+
+  // ── Administration ──
+  PRINCIPAL
+  DIRECTOR
+  BOARD_MEMBER
+  RECEPTIONIST
+  ADMISSIONS_COUNSELOR
+  SYS_ADMIN
+  DATA_ENTRY_STAFF
+
+  // ── Ops & Finance ──
+  FINANCE_ACCOUNTANT
+  FEE_COLLECTOR
+  HR_MANAGER
+  HR_RECRUITER
+  LEGAL_STAFF
+  STORE_MANAGER
+  PURCHASE_OFFICER
+
+  // ── Growth & Outreach ──
+  MARKETING_STAFF
+  COMMUNICATION_STAFF
+  EVENT_COORDINATOR
+
+  // ── Campus Services ──
+  FLEET_MANAGER
+  ESTATE_MANAGER
+  MAINTENANCE_STAFF
+  JANITORIAL_STAFF
+  SECURITY_OFFICER
+  SECURITY_GUARD
+  CATERING_MANAGER
+  CAFETERIA_STAFF
+
+  // ── Student Life ──
+  SCHOOL_NURSE
+  SCHOOL_PSYCHOLOGIST
+  LIBRARIAN
+  ASSISTANT_LIBRARIAN
+  SPORTS_COACH
+  PE_INSTRUCTOR
+  HOSTEL_WARDEN
+  DORM_SUPERVISOR
+}
+
+// ─── Employee Role ──────────────────────────────────────────────────────────
+// Organizational role catalog — "Senior Teacher", "Bus Driver", "Lab
+// Attendant", etc.  Named EmployeeRole to avoid collision with IAM Role.
+model EmployeeRole {
+  id             String             @id @default(uuid())
+  tenantId       String             @db.VarChar(50)
+  name           String             @db.VarChar(200)
+  code           String             @db.VarChar(20)
+  isActive       Boolean            @default(true)
+  departmentId   String
+  systemCategory SystemRoleCategory @default(STANDARD_STAFF)
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  employees  Employee[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([tenantId, departmentId])
+}
+
+// ─── Unified Employee (The Backbone) ────────────────────────────────────────
+// Every staff member (teacher, driver, attendant, admin, lab tech, …) exists
+// as exactly one Employee.  Specialized domain data lives in extension
+// tables linked 1-to-1 (Teacher, Driver, Attendant).
+model Employee {
+  id            String    @id @default(uuid())
+  tenantId      String    @db.VarChar(50)
+  firstName     String    @db.VarChar(100)
+  lastName      String?   @db.VarChar(100)
+  contactPhone  String?   @db.VarChar(20)
+  email         String?   @db.VarChar(200)
+  dateOfBirth   DateTime?
+  dateOfJoining DateTime?
+  isActive      Boolean   @default(true)
+
+  // ── Staff Authentication ──────────────────────────────────────────────────
+  passwordHash           String?   @db.VarChar(255)
+  requiresPasswordChange Boolean   @default(true)
+  passwordChangedAt      DateTime?
+  lastLoginAt            DateTime?
+
+  departmentId String
+  roleId       String
+
+  createdBy  String?  @db.VarChar(50)
+  updatedBy  String?  @db.VarChar(50)
+  softDelete Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant     Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  department Department   @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  role       EmployeeRole @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  // 1-to-1 extension records (nullable — not every employee is a teacher)
+  teacher   Teacher?
+  driver    Driver?
+  attendant Attendant?
+
+  @@unique([tenantId, email])
+  @@unique([tenantId, contactPhone])
+  @@index([tenantId])
+  @@index([tenantId, departmentId])
+  @@index([tenantId, roleId])
 }

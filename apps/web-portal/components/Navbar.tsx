@@ -14,6 +14,15 @@ interface NavGroup { label: string; links: NavLink[] }
 // School Admin — full ERP grouped menu
 const ADMIN_GROUPS: NavGroup[] = [
   {
+    label: 'HR & Staff',
+    links: [
+      { href: '/admin/hr/onboard',        label: 'Onboard Employee' },
+      { href: '/admin/hr/departments',    label: 'Departments'     },
+      { href: '/admin/hr/roles',          label: 'Employee Roles'  },
+      { href: '/admin/hr/employees',      label: 'Employee Directory' },
+    ],
+  },
+  {
     label: 'People',
     links: [
       { href: '/admin/faculty',        label: 'Faculty'       },
@@ -61,6 +70,15 @@ const ADMIN_GROUPS: NavGroup[] = [
     links: [
       { href: '/admin/scheduling/timetable', label: 'Timetable' },
       { href: '/admin/scheduling/timetable-v2', label: 'Timetable V2' },
+    ],
+  },
+  {
+    label: 'Transport',
+    links: [
+      { href: '/admin/transport/staff', label: 'Drivers & Attendants' },
+      { href: '/admin/transport/routes', label: 'Routes & Fleet' },
+      { href: '/admin/transport/allocations', label: 'Student Allocations' },
+      { href: '/admin/transport/analytics', label: 'Fleet Analytics' },
     ],
   },
 ];

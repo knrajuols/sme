@@ -132,7 +132,7 @@ export class TimetableService {
           subjectId: true,
           teacherId: true,
           subject: { select: { id: true, name: true, code: true } },
-          teacher: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
+          teacher: { select: { id: true, employeeCode: true, employee: { select: { firstName: true, lastName: true } } } },
         },
       }),
     ]);
@@ -197,7 +197,7 @@ export class TimetableService {
           sectionId: true,
           periodId:  true,
           subject:   { select: { id: true, name: true, code: true } },
-          teacher:   { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
+          teacher:   { select: { id: true, employeeCode: true, employee: { select: { firstName: true, lastName: true } } } },
         },
       }),
     ]);
@@ -211,7 +211,19 @@ export class TimetableService {
         name: cs.section.name,
       })),
     }));
-    return { periods, classes: normalisedClasses, entries };
+    // Flatten teacher.employee.firstName/lastName to teacher.firstName/lastName
+    // so the frontend TeacherRef interface (which expects a flat shape) resolves
+    // teacher names correctly instead of falling back to employeeCode.
+    const normalisedEntries = entries.map(e => ({
+      ...e,
+      teacher: e.teacher ? {
+        id:           e.teacher.id,
+        employeeCode: e.teacher.employeeCode,
+        firstName:    e.teacher.employee?.firstName ?? null,
+        lastName:     e.teacher.employee?.lastName ?? null,
+      } : null,
+    }));
+    return { periods, classes: normalisedClasses, entries: normalisedEntries };
   }
 
   async upsertEntry(

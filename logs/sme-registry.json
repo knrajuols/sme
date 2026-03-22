@@ -1,8 +1,3 @@
 ﻿{
-    "tenant-service":  9432,
-    "config-service":  31472,
-    "portal-service":  22980,
-    "api-gateway":  27008,
-    "web-admin":  13324,
-    "web-portal":  20024
-}
+    "iam-service":  8836,
+  

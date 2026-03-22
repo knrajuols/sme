@@ -8,6 +8,10 @@ export interface UserClaims {
   studentIds?: string[];
   /** Login email of the authenticated user — included in JWT for display only. */
   email?: string;
+  /** True when staff must change their default password before accessing the platform. */
+  requiresPasswordChange?: boolean;
+  /** The employee's EmployeeRole.systemCategory — enables future RBAC decisions. */
+  systemCategory?: string;
   iat?: number;
   exp?: number;
 }
@@ -34,6 +38,68 @@ export async function login(email: string, _password: string): Promise<string> {
 
   localStorage.setItem(TOKEN_KEY, token);
   return token;
+}
+
+// ── Staff Authentication (Phone + Password via tenant-service) ──────────────
+
+export interface StaffLoginResponse {
+  accessToken: string;
+  requiresPasswordChange: boolean;
+  employee: { id: string; firstName: string; lastName: string | null };
+}
+
+/**
+ * [SEC-AUTH-010] Staff login via phone + password.
+ * Calls the BFF route which injects the tenant subdomain context server-side.
+ */
+export async function staffLogin(phone: string, password: string): Promise<StaffLoginResponse> {
+  const response = await fetch('/api/auth/staff/login', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ phone: phone.trim(), password }),
+  });
+
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.message ?? 'Login failed');
+  }
+
+  const data = body?.data ?? body;
+  const token = data?.accessToken;
+  if (!token) {
+    throw new Error('Access token missing in login response');
+  }
+
+  localStorage.setItem(TOKEN_KEY, token);
+
+  // Store staff name for welcome message on setup-password page
+  const name = [data.employee?.firstName, data.employee?.lastName].filter(Boolean).join(' ');
+  if (name) localStorage.setItem('sme_staff_name', name);
+
+  return data as StaffLoginResponse;
+}
+
+/**
+ * [SEC-AUTH-011] Change staff password (first-time or voluntary).
+ * Requires valid JWT in localStorage.
+ */
+export async function changeStaffPassword(newPassword: string): Promise<void> {
+  const token = getToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch('/api/auth/staff/change-password', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify({ newPassword }),
+  });
+
+  const body = await response.json();
+  if (!response.ok) {
+    throw new Error(body?.message ?? 'Password change failed');
+  }
 }
 
 export function logout(): void {

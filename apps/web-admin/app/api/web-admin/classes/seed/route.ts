@@ -31,9 +31,11 @@ function err(code: string, msg: string, status: number): NextResponse {
 // ── POST /api/web-admin/classes/seed ──────────────────────────────────────────
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    const rawBody = await req.text();
     const upstream = await fetch(`${TENANT_SVC}/web-admin/classes/seed`, {
       method: 'POST',
       headers: upstreamHeaders(req, 'POST /web-admin/classes/seed'),
+      body: rawBody || undefined,
     });
     const body: unknown = await upstream.json().catch(() => ({}));
     if (!upstream.ok) {

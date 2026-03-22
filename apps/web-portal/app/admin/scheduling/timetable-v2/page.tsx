@@ -293,7 +293,6 @@ function PeriodCellV2({
                 <p className="text-[11px] font-bold truncate leading-tight text-emerald-800">
                   {teacherDisplay ?? <span className="font-normal italic text-slate-400">No teacher</span>}
                 </p>
-                {teacherCode && <p className="text-[10px] truncate leading-tight mt-0.5 text-emerald-500 font-medium">{teacherCode}</p>}
                 {subjectName && <p className="text-[9px] truncate leading-tight mt-1 text-slate-400">{subjectName}</p>}
               </>
             )}
@@ -306,7 +305,6 @@ function PeriodCellV2({
                 {teacherDisplay && (
                   <p className="text-[10px] truncate leading-tight mt-0.5 text-emerald-600 font-medium">{teacherDisplay}</p>
                 )}
-                {subjectCode && <p className="text-[9px] truncate leading-tight mt-0.5 text-slate-400">{subjectCode}</p>}
               </>
             )}
           </div>

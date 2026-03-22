@@ -276,7 +276,6 @@ function PeriodCell({
             <p className="text-[11px] font-bold truncate leading-tight text-emerald-800">
               {teacherDisplay ?? <span className="font-normal italic text-slate-400">No teacher</span>}
             </p>
-            {teacherCode && <p className="text-[10px] truncate leading-tight mt-0.5 text-emerald-500">{teacherCode}</p>}
           </>
         )}
 

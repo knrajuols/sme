@@ -315,9 +315,12 @@ function DeleteDialog({
   );
 }
 
+// ── Pagination constants ──────────────────────────────────────────────────────
+const PAGE_SIZE_OPTIONS = [10, 25, 50];
+
 // ── Main content ──────────────────────────────────────────────────────────────
 function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [allClasses, setAllClasses] = useState<SchoolClass[]>([]);
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -329,28 +332,52 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
   const [deleteTarget, setDeleteTarget] = useState<SchoolClass | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [seeding, setSeeding] = useState(false);
+  const [seedingFromMaster, setSeedingFromMaster] = useState(false);
   const [sortConfig, setSortConfig] = useState<{ key: SortKey; direction: SortDirection }>(
     { key: 'name', direction: 'asc' }
   );
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterYear, setFilterYear] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE_OPTIONS[0]);
 
   const collator = useMemo(
     () => new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }),
     []
   );
 
+  // Classes filtered by academic year
+  const classesForYear = useMemo(
+    () => filterYear
+      ? (Array.isArray(allClasses) ? allClasses : []).filter((c) => c.academicYearId === filterYear)
+      : (Array.isArray(allClasses) ? allClasses : []),
+    [allClasses, filterYear],
+  );
+
+  // Sorted + search-filtered
   const sortedClasses = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
     const filtered = q
-      ? (Array.isArray(classes) ? classes : []).filter(
+      ? classesForYear.filter(
           (c) => c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q)
         )
-      : (Array.isArray(classes) ? classes : []);
+      : classesForYear;
     return [...filtered].sort((a, b) => {
       const cmp = collator.compare(a[sortConfig.key], b[sortConfig.key]);
       return sortConfig.direction === 'asc' ? cmp : -cmp;
     });
-  }, [classes, sortConfig, collator, searchTerm]);
+  }, [classesForYear, sortConfig, collator, searchTerm]);
+
+  // Pagination
+  const totalPages = Math.max(1, Math.ceil(sortedClasses.length / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+  const pagedClasses = useMemo(
+    () => sortedClasses.slice((safePage - 1) * pageSize, safePage * pageSize),
+    [sortedClasses, safePage, pageSize],
+  );
+
+  // Can we generate for this year?
+  const canGenerate = !loading && filterYear && classesForYear.length === 0;
 
   function toggleSort(key: SortKey) {
     setSortConfig((prev) =>
@@ -358,18 +385,22 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
         ? { key, direction: prev.direction === 'asc' ? 'desc' : 'asc' }
         : { key, direction: 'asc' }
     );
+    setCurrentPage(1);
   }
 
   useEffect(() => {
     void Promise.all([fetchClasses(), fetchYears()]);
   }, []);
 
+  // Reset pagination when filters change
+  useEffect(() => { setCurrentPage(1); }, [filterYear, searchTerm, pageSize]);
+
   async function fetchClasses() {
     try {
       setLoading(true);
       setLoadError('');
       const data = await bffFetch<SchoolClass[]>('/api/academic-setup/classes');
-      setClasses(data);
+      setAllClasses(data);
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load classes');
     } finally {
@@ -386,15 +417,40 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
     }
   }
 
-  async function handleSeed() {
-    setSeeding(true);
+  async function handleSeedFromMaster() {
+    if (!filterYear) { setErrorMsg('Please select an Academic Year first.'); return; }
+    setSeedingFromMaster(true);
     setErrorMsg('');
     try {
-      await bffFetch<{ seeded: number }>('/api/academic-setup/classes/seed-from-master', { method: 'POST' });
-      setSuccessMsg('✅ Classes generated from master template.');
+      const result = await bffFetch<{ seeded: number }>('/api/academic-setup/classes/seed-from-master', {
+        method: 'POST',
+        body: JSON.stringify({ academicYearId: filterYear }),
+      });
+      const yearLabel = years.find((y) => y.id === filterYear)?.name ?? '';
+      setSuccessMsg(`${result.seeded} classes generated from master template for ${yearLabel}.`);
       await fetchClasses();
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : 'Failed to generate classes from master template');
+    } finally {
+      setSeedingFromMaster(false);
+      setTimeout(() => setSuccessMsg(''), 4000);
+    }
+  }
+
+  async function handleSeed12() {
+    if (!filterYear) { setErrorMsg('Please select an Academic Year first.'); return; }
+    setSeeding(true);
+    setErrorMsg('');
+    try {
+      const result = await bffFetch<{ seeded: number }>('/api/academic-setup/classes/seed', {
+        method: 'POST',
+        body: JSON.stringify({ academicYearId: filterYear }),
+      });
+      const yearLabel = years.find((y) => y.id === filterYear)?.name ?? '';
+      setSuccessMsg(`${result.seeded} classes (Class 1–12) seeded for ${yearLabel}.`);
+      await fetchClasses();
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : 'Failed to seed classes');
     } finally {
       setSeeding(false);
       setTimeout(() => setSuccessMsg(''), 4000);
@@ -466,8 +522,10 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
     }
   }
 
+  const selectedYearLabel = years.find((y) => y.id === filterYear)?.name ?? '';
+
   return (
-    <div className="max-w-5xl">
+    <div className="max-w-5xl mx-auto">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-xs text-slate-400 mb-6" aria-label="Breadcrumb">
         <Link href="/admin/academic-setup" className="hover:text-slate-600 transition-colors">
@@ -483,67 +541,136 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900">Classes</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Manage your school&apos;s class levels.</p>
+          <p className="text-sm text-slate-500 mt-0.5">Manage your school&apos;s class levels per academic year.</p>
         </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          {classes.length === 0 && !loading && (
+        <button
+          type="button"
+          onClick={openAdd}
+          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors flex-shrink-0"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          </svg>
+          Add Class
+        </button>
+      </div>
+
+      {/* Filter Bar */}
+      <div className="mb-5 rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+        <div className="flex flex-wrap gap-3 items-end">
+          {/* Academic Year Filter */}
+          <div className="flex flex-col gap-1 min-w-[200px]">
+            <label className="text-xs font-semibold text-slate-600">Academic Year</label>
+            <select
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={filterYear}
+              onChange={(e) => setFilterYear(e.target.value)}
+            >
+              <option value="">All Years</option>
+              {(Array.isArray(years) ? years : []).map((y) => (
+                <option key={y.id} value={y.id}>{y.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Search filter */}
+          <div className="flex flex-col gap-1 min-w-[200px] flex-1">
+            <label className="text-xs font-semibold text-slate-600">Search</label>
+            <div className="relative">
+              <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
+              </svg>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by name or code…"
+                className="w-full border border-slate-300 rounded-lg pl-9 pr-9 py-2 text-sm bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all"
+              />
+              {searchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                  aria-label="Clear search"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {(filterYear || searchTerm) && (
             <button
               type="button"
-              onClick={() => void handleSeed()}
-              disabled={seeding}
-              className="inline-flex items-center gap-2 rounded-lg border border-teal-200 bg-white px-4 py-2.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 shadow-sm disabled:opacity-60 transition-colors flex-shrink-0"
+              onClick={() => { setFilterYear(''); setSearchTerm(''); }}
+              className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors self-end"
             >
-              {seeding ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  Generating&hellip;
-                </>
-              ) : (
-                <>✅ Generate from Master Data</>
-              )}
+              Clear Filters
             </button>
           )}
-          <button
-            type="button"
-            onClick={openAdd}
-            className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 transition-colors flex-shrink-0"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            Add Class
-          </button>
         </div>
       </div>
 
-      {/* Search bar */}
-      {!loading && !loadError && classes.length > 0 && (
-        <div className="mb-4 relative max-w-md">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" />
-          </svg>
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search classes…"
-            className="w-full border border-slate-200 rounded-lg pl-9 pr-9 py-2 text-sm bg-white focus:ring-2 focus:ring-teal-500 focus:border-teal-500 outline-none transition-all"
-          />
-          {searchTerm && (
-            <button
-              type="button"
-              onClick={() => setSearchTerm('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
-              aria-label="Clear search"
-            >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          )}
+      {/* Generate Classes for selected year */}
+      {canGenerate && (
+        <div className="mb-5 rounded-xl border-2 border-dashed border-teal-300 bg-teal-50/50 p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-teal-800">
+                No classes found for {selectedYearLabel}
+              </p>
+              <p className="text-xs text-teal-600 mt-0.5">
+                Generate classes for this academic year to enable fee structures, timetables, and enrollments.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => void handleSeedFromMaster()}
+                disabled={seedingFromMaster || seeding}
+                className="inline-flex items-center gap-2 rounded-lg border border-teal-300 bg-white px-4 py-2.5 text-sm font-semibold text-teal-700 hover:bg-teal-50 shadow-sm disabled:opacity-60 transition-colors"
+              >
+                {seedingFromMaster ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    Generating&hellip;
+                  </>
+                ) : 'Generate from Master Data'}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSeed12()}
+                disabled={seeding || seedingFromMaster}
+                className="inline-flex items-center gap-2 rounded-lg border border-blue-300 bg-white px-4 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-50 shadow-sm disabled:opacity-60 transition-colors"
+              >
+                {seeding ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    Seeding&hellip;
+                  </>
+                ) : 'Seed Class 1–12'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Prompt to select a year if no year filter & no classes at all */}
+      {!loading && !loadError && allClasses.length === 0 && !filterYear && (
+        <div className="mb-5 rounded-xl border-2 border-dashed border-amber-300 bg-amber-50/50 p-5 text-center">
+          <p className="text-sm font-semibold text-amber-800 mb-1">No classes configured yet</p>
+          <p className="text-xs text-amber-600">
+            Select an Academic Year above, then use &ldquo;Generate from Master Data&rdquo; or &ldquo;Seed Class 1–12&rdquo; to get started.
+          </p>
         </div>
       )}
 
@@ -580,70 +707,136 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
         </div>
       )}
 
-      {!loading && !loadError && (
+      {/* Desktop table with sticky header */}
+      {!loading && !loadError && sortedClasses.length > 0 && (
       <div className="hidden sm:block rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-        <table className="grand-table w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-100 bg-slate-50/70">
-              <SortHeader label="Class Name" sortKey="name" current={sortConfig} onSort={toggleSort} />
-              <SortHeader label="Code" sortKey="code" current={sortConfig} onSort={toggleSort} />
-              <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Academic Year</th>
-              <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {sortedClasses.map((sc) => (
-              <tr key={sc.id} className="hover:bg-slate-50/50 transition-colors">
-                <td className="px-5 py-4 font-semibold text-slate-900">{sc.name}</td>
-                <td className="px-5 py-4">
-                  <span className="rounded px-1.5 py-0.5 bg-slate-100 text-slate-700 font-mono text-xs">{sc.code}</span>
-                </td>
-                <td className="px-5 py-4 text-slate-500">
-                  {years.find((y) => y.id === sc.academicYearId)?.name ?? sc.academicYearId}
-                </td>
-                <td className="px-5 py-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openEdit(sc)}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => confirmDelete(sc)}
-                      className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
+        <div className="max-h-[65vh] overflow-auto">
+          <table className="grand-table w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-50/95 backdrop-blur-sm">
+              <tr className="border-b border-slate-100">
+                <SortHeader label="Class Name" sortKey="name" current={sortConfig} onSort={toggleSort} />
+                <SortHeader label="Code" sortKey="code" current={sortConfig} onSort={toggleSort} />
+                {!filterYear && (
+                  <th className="px-5 py-3.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">Academic Year</th>
+                )}
+                <th className="px-5 py-3.5 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">Actions</th>
               </tr>
-            ))}
-            {sortedClasses.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-5 py-16 text-center text-sm text-slate-400">
-                  {searchTerm
-                    ? `No results for "${searchTerm}".`
-                    : 'No classes yet. Click \u201c\u2728 Generate Sample Data\u201d or \u201cAdd Class\u201d to get started.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {pagedClasses.map((sc) => (
+                <tr key={sc.id} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-5 py-4 font-semibold text-slate-900">{sc.name}</td>
+                  <td className="px-5 py-4">
+                    <span className="rounded px-1.5 py-0.5 bg-slate-100 text-slate-700 font-mono text-xs">{sc.code}</span>
+                  </td>
+                  {!filterYear && (
+                    <td className="px-5 py-4 text-slate-500">
+                      {years.find((y) => y.id === sc.academicYearId)?.name ?? sc.academicYearId}
+                    </td>
+                  )}
+                  <td className="px-5 py-4">
+                    <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openEdit(sc)}
+                        className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => confirmDelete(sc)}
+                        className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Sticky footer — pagination */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-slate-200 bg-slate-50/70 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
+            <span>Rows per page:</span>
+            <select
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-blue-400"
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+            >
+              {PAGE_SIZE_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <span>
+            {sortedClasses.length === 0
+              ? '0 of 0'
+              : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, sortedClasses.length)} of ${sortedClasses.length}`}
+          </span>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(1)}
+              disabled={safePage <= 1}
+              className="rounded p-1.5 hover:bg-slate-200 disabled:opacity-40 transition-colors"
+              aria-label="First page"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7M18 19l-7-7 7-7" /></svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="rounded p-1.5 hover:bg-slate-200 disabled:opacity-40 transition-colors"
+              aria-label="Previous page"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7 7" /></svg>
+            </button>
+            <span className="px-2 font-medium">Page {safePage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="rounded p-1.5 hover:bg-slate-200 disabled:opacity-40 transition-colors"
+              aria-label="Next page"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={safePage >= totalPages}
+              className="rounded p-1.5 hover:bg-slate-200 disabled:opacity-40 transition-colors"
+              aria-label="Last page"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M6 5l7 7-7 7" /></svg>
+            </button>
+          </div>
+        </div>
       </div>
       )}
 
-      {!loading && !loadError && (
+      {/* Empty state (filtered but no search results) */}
+      {!loading && !loadError && sortedClasses.length === 0 && (classesForYear.length > 0 || (!filterYear && allClasses.length > 0)) && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-8 text-center text-sm text-slate-400">
+          {searchTerm ? `No results for "${searchTerm}".` : 'No classes match the current filters.'}
+        </div>
+      )}
+
+      {/* Mobile cards */}
+      {!loading && !loadError && pagedClasses.length > 0 && (
       <div className="sm:hidden space-y-3">
-        {sortedClasses.map((sc) => (
+        {pagedClasses.map((sc) => (
           <div key={sc.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-2 mb-1">
               <p className="font-bold text-slate-900 text-base">{sc.name}</p>
               <span className="rounded px-1.5 py-0.5 bg-slate-100 text-slate-700 font-mono text-xs">{sc.code}</span>
             </div>
-            <p className="text-xs text-slate-400 mb-3">{years.find((y) => y.id === sc.academicYearId)?.name ?? ''}</p>
+            {!filterYear && (
+              <p className="text-xs text-slate-400 mb-3">{years.find((y) => y.id === sc.academicYearId)?.name ?? ''}</p>
+            )}
             <div className="flex gap-2">
               <button
                 type="button"
@@ -662,11 +855,27 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
             </div>
           </div>
         ))}
-        {sortedClasses.length === 0 && (
-          <div className="py-12 text-center text-sm text-slate-400">
-            {searchTerm
-              ? `No results for "${searchTerm}".`
-              : 'No classes yet. Tap \u201c\u2728 Generate Sample Data\u201d to create Class 1\u201312.'}
+
+        {/* Mobile pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-2 py-3 text-xs text-slate-500">
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              disabled={safePage <= 1}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span>Page {safePage} of {totalPages}</span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              disabled={safePage >= totalPages}
+              className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium disabled:opacity-40"
+            >
+              Next
+            </button>
           </div>
         )}
       </div>
@@ -674,9 +883,9 @@ function ClassesContent({ claims: _claims }: { claims: UserClaims }) {
 
       {!loading && !loadError && (
         <p className="mt-4 text-xs text-slate-400">
-          {searchTerm
-            ? `${sortedClasses.length} of ${classes.length} class${classes.length !== 1 ? 'es' : ''} shown.`
-            : `${classes.length} class${classes.length !== 1 ? 'es' : ''} configured.`}
+          {filterYear
+            ? `${classesForYear.length} class${classesForYear.length !== 1 ? 'es' : ''} for ${selectedYearLabel}${searchTerm ? ` (${sortedClasses.length} matching)` : ''}.`
+            : `${allClasses.length} class${allClasses.length !== 1 ? 'es' : ''} total${searchTerm ? ` (${sortedClasses.length} matching)` : ''}.`}
         </p>
       )}
 

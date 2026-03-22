@@ -51,6 +51,15 @@ export class TransportAllocationController {
     return this.svc.listAllocations(MASTER_TEMPLATE);
   }
 
+  // ── Students grid (all students with allocation status) ───────────────────
+
+  @Get('students-grid')
+  @ApiOperation({ summary: 'All active students with their transport allocation status' })
+  @Permissions('TENANT_CREATE')
+  async studentsGrid() {
+    return this.svc.getStudentsGrid(MASTER_TEMPLATE);
+  }
+
   // ── Lookup data (routes, trips, stops, academic years) ────────────────────
 
   @Get('lookup')

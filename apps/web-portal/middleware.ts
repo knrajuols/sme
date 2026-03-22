@@ -77,7 +77,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Guard: main site must not access school-only routes
-  if (!subdomain && (pathname.startsWith('/login') || pathname.startsWith('/admin') || pathname.startsWith('/portal'))) {
+  if (!subdomain && (pathname.startsWith('/login') || pathname.startsWith('/admin') || pathname.startsWith('/portal') || pathname.startsWith('/staff'))) {
     return NextResponse.redirect(new URL('/school-not-found', request.url));
   }
 

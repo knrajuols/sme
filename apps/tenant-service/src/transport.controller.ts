@@ -271,4 +271,13 @@ export class TransportController {
   ): Promise<{ deleted: boolean }> {
     return this.transportService.deleteRoute(id, ctx(user, cid));
   }
+
+  // ── Master Seeder ─────────────────────────────────────────────────────────
+
+  @Post('seed-master')
+  @ApiOperation({ summary: 'Seed MASTER_TEMPLATE with enterprise transport data (idempotent)' })
+  @Permissions('TENANT_CREATE')
+  async seedMaster(@CurrentUser() user: JwtClaims) {
+    return this.transportService.seedMasterData(user.sub);
+  }
 }

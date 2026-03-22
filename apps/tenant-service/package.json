@@ -14,6 +14,10 @@
   "dependencies": {
     "@sme/common": "file:../../libs/common",
     "@sme/logger": "file:../../libs/logger",
-    "@sme/messaging": "file:../../libs/messaging"
+    "@sme/messaging": "file:../../libs/messaging",
+    "bcrypt": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0"
   }
 }

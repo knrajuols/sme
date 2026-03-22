@@ -20,6 +20,7 @@ import { Roles } from './auth/roles.decorator';
 import { RolesGuard } from './auth/roles.guard';
 import { AcademicService } from './academic.service';
 import { FinanceService } from './finance.service';
+import { HrService } from './hr.service';
 import { CreatePeriodDto } from './dto/create-period.dto';
 import { UpdatePeriodDto } from './dto/update-period.dto';
 import { CreateExamScheduleDto } from './dto/create-exam-schedule.dto';
@@ -64,6 +65,7 @@ export class WebAdminController {
   constructor(
     private readonly academicService: AcademicService,
     private readonly financeService: FinanceService,
+    private readonly hrService: HrService,
   ) {}
 
   // ── Master Template: Periods ──────────────────────────────────────────────
@@ -340,14 +342,18 @@ export class WebAdminController {
   @Permissions('TENANT_CREATE')
   async seedMasterClasses(
     @CurrentUser() user: JwtClaims,
+    @Body() body: { academicYearId?: string },
     @Headers('x-correlation-id') correlationIdHeader?: string,
   ): Promise<{ seeded: number }> {
-    return this.academicService.seedClasses({
-      tenantId: MASTER_TEMPLATE,
-      userId: user.sub,
-      role: user.roles[0] ?? 'PLATFORM_ADMIN',
-      correlationId: correlationIdHeader ?? randomUUID(),
-    });
+    return this.academicService.seedClasses(
+      {
+        tenantId: MASTER_TEMPLATE,
+        userId: user.sub,
+        role: user.roles[0] ?? 'PLATFORM_ADMIN',
+        correlationId: correlationIdHeader ?? randomUUID(),
+      },
+      body?.academicYearId,
+    );
   }
 
   // ── Master Template: Sections ────────────────────────────────────────────
@@ -674,14 +680,18 @@ export class WebAdminController {
   @Permissions('TENANT_CREATE')
   async seedMasterFeeStructures(
     @CurrentUser() user: JwtClaims,
+    @Body() body: { academicYearId?: string },
     @Headers('x-correlation-id') correlationIdHeader?: string,
   ): Promise<{ created: number; skipped: number }> {
-    return this.financeService.seedFeeStructures({
-      tenantId: MASTER_TEMPLATE,
-      userId: user.sub,
-      role: user.roles[0] ?? 'PLATFORM_ADMIN',
-      correlationId: correlationIdHeader ?? randomUUID(),
-    });
+    return this.financeService.seedFeeStructures(
+      {
+        tenantId: MASTER_TEMPLATE,
+        userId: user.sub,
+        role: user.roles[0] ?? 'PLATFORM_ADMIN',
+        correlationId: correlationIdHeader ?? randomUUID(),
+      },
+      body?.academicYearId,
+    );
   }
 
   @Patch('fee-structures/:id')
@@ -923,6 +933,34 @@ export class WebAdminController {
     @Headers('x-correlation-id') correlationIdHeader?: string,
   ) {
     return this.academicService.deleteHolidayEntry(id, {
+      tenantId: MASTER_TEMPLATE,
+      userId: user.sub,
+      role: user.roles[0] ?? 'PLATFORM_ADMIN',
+      correlationId: correlationIdHeader ?? randomUUID(),
+    });
+  }
+
+  // ── Master Template: Org Structure (Departments + Roles) ──────────────────
+
+  @Get('org-structure')
+  @ApiOperation({ summary: 'List master template departments and roles' })
+  @Permissions('TENANT_CREATE')
+  async listMasterOrgStructure() {
+    const [departments, roles] = await Promise.all([
+      this.hrService.listDepartments(MASTER_TEMPLATE),
+      this.hrService.listEmployeeRoles(MASTER_TEMPLATE),
+    ]);
+    return { departments, roles };
+  }
+
+  @Post('org-structure/seed')
+  @ApiOperation({ summary: 'Seed the canonical org-structure into the master template' })
+  @Permissions('TENANT_CREATE')
+  async seedMasterOrgStructure(
+    @CurrentUser() user: JwtClaims,
+    @Headers('x-correlation-id') correlationIdHeader?: string,
+  ): Promise<{ departments: number; roles: number }> {
+    return this.hrService.seedOrgStructure({
       tenantId: MASTER_TEMPLATE,
       userId: user.sub,
       role: user.roles[0] ?? 'PLATFORM_ADMIN',

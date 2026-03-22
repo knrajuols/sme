@@ -31,9 +31,19 @@ function err(code: string, msg: string, status: number): NextResponse {
 // ── POST /api/academic-setup/classes/seed ─────────────────────────────────────
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    // Read optional academicYearId from request body
+    let payload = '{}';
+    try {
+      const parsed = (await req.json()) as Record<string, unknown>;
+      if (parsed?.academicYearId && typeof parsed.academicYearId === 'string') {
+        payload = JSON.stringify({ academicYearId: parsed.academicYearId });
+      }
+    } catch { /* empty body is fine — service defaults to active year */ }
+
     const upstream = await fetch(`${TENANT_SVC}/academic/classes/seed`, {
       method: 'POST',
       headers: upstreamHeaders(req, 'POST /academic/classes/seed'),
+      body: payload,
     });
     const body: unknown = await upstream.json().catch(() => ({}));
     if (!upstream.ok) {

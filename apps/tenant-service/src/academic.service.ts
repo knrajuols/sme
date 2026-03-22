@@ -58,6 +58,7 @@ import {
 } from './dto/holiday-engine.dto';
 import { TenantStatus } from './generated/prisma-client';
 import { PrismaService } from './prisma/prisma.service';
+import { StaffAuthService } from './staff-auth.service';
 import { addMins, timeToMins } from './utils/time.util';
 
 interface RequestContext {
@@ -72,6 +73,7 @@ export class AcademicService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly publisher: MessagePublisherService,
+    private readonly staffAuth: StaffAuthService,
   ) {}
 
   async createAcademicYear(dto: CreateAcademicYearDto, context: RequestContext): Promise<{ id: string }> {
@@ -354,21 +356,60 @@ export class AcademicService {
       }
     }
 
-    const id = randomUUID();
+    // Validate departmentId and roleId for the Employee record
+    if (dto.departmentId) {
+      const dept = await this.prisma.department.findFirst({
+        where: { id: dto.departmentId, tenantId: context.tenantId, softDelete: false },
+      });
+      if (!dept) throw new BadRequestException('[ERR-TS-4010] Department not found');
+    }
+    if (dto.roleId) {
+      const role = await this.prisma.employeeRole.findFirst({
+        where: { id: dto.roleId, tenantId: context.tenantId, softDelete: false },
+      });
+      if (!role) throw new BadRequestException('[ERR-TS-4011] Employee role not found');
+    }
 
-    // Single atomic transaction: teacher row + subject assignments succeed or fail together.
+    const id = randomUUID();
+    const employeeId = randomUUID();
+
+    // Hash DOB as default password (DDMMYYYY format)
+    const passwordHash = await this.staffAuth.hashDateOfBirth(
+      dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
+    );
+
+    // Atomic transaction: Employee backbone + Teacher extension + subject assignments
     await this.prisma.$transaction(async (tx) => {
+      // FIRST: Create the unified Employee record
+      await tx.employee.create({
+        data: {
+          id: employeeId,
+          tenantId: context.tenantId,
+          firstName: dto.firstName,
+          lastName: dto.lastName ?? null,
+          contactPhone: dto.phone ?? null,
+          email: dto.email ?? null,
+          dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null,
+          dateOfJoining: dto.dateOfJoining ? new Date(dto.dateOfJoining) : null,
+          passwordHash,
+          requiresPasswordChange: true,
+          departmentId: dto.departmentId,
+          roleId: dto.roleId,
+          isActive: dto.isActive ?? true,
+          createdBy: context.userId,
+          updatedBy: context.userId,
+        },
+      });
+
+      // SECOND: Create the Teacher extension linked to the Employee
       await tx.teacher.create({
         data: {
           id,
           tenantId: context.tenantId,
+          employeeId,
           userId: dto.userId ?? undefined,
           employeeCode: dto.employeeCode,
           designation: dto.designation,
-          firstName: dto.firstName,
-          lastName: dto.lastName,
-          email: dto.email,
-          contactPhone: dto.phone ?? undefined,
           isActive: dto.isActive ?? true,
           createdBy: context.userId,
           updatedBy: context.userId,
@@ -387,31 +428,40 @@ export class AcademicService {
       }
     });
 
-    await this.publishAudit(context, 'CREATE', 'Teacher', id, 'Teacher created', { employeeCode: dto.employeeCode });
+    await this.publishAudit(context, 'CREATE', 'Teacher', id, 'Teacher created', { employeeCode: dto.employeeCode, employeeId });
     return { id };
   }
 
   async listTeachers(tenantId: string): Promise<Array<{
     id: string; firstName: string | null; lastName: string | null; email: string | null;
-    contactPhone: string | null; employeeCode: string; designation: string;
+    contactPhone: string | null; dateOfBirth: Date | null; dateOfJoining: Date | null;
+    employeeCode: string; designation: string;
     isActive: boolean; createdAt: Date; updatedAt: Date;
     subjects: { id: string; name: string; code: string; }[];
   }>> {
     const rows = await this.prisma.teacher.findMany({
       where: { tenantId, softDelete: false },
       select: {
-        id: true, firstName: true, lastName: true, email: true,
-        contactPhone: true, employeeCode: true, designation: true,
+        id: true, employeeCode: true, designation: true,
         isActive: true, createdAt: true, updatedAt: true,
+        employee: {
+          select: { firstName: true, lastName: true, email: true, contactPhone: true, dateOfBirth: true, dateOfJoining: true },
+        },
         teacherSubjects: {
           where: { subject: { softDelete: false } },
           select: { subject: { select: { id: true, name: true, code: true } } },
         },
       },
-      orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+      orderBy: { employeeCode: 'asc' },
     });
-    return rows.map(({ teacherSubjects, ...rest }) => ({
+    return rows.map(({ teacherSubjects, employee, ...rest }) => ({
       ...rest,
+      firstName: employee?.firstName ?? null,
+      lastName: employee?.lastName ?? null,
+      email: employee?.email ?? null,
+      contactPhone: employee?.contactPhone ?? null,
+      dateOfBirth: employee?.dateOfBirth ?? null,
+      dateOfJoining: employee?.dateOfJoining ?? null,
       subjects: teacherSubjects.map(ts => ts.subject),
     }));
   }
@@ -430,15 +480,19 @@ export class AcademicService {
       }
     }
 
-    // Single atomic transaction: teacher update + subject replacement succeed or fail together.
+    // Single atomic transaction: teacher update + Employee PII sync + subject replacement.
     await this.prisma.$transaction(async (tx) => {
-      const result = await tx.teacher.updateMany({
+      // Find the teacher and its employee link
+      const teacher = await tx.teacher.findFirst({
         where: { id, tenantId: context.tenantId, softDelete: false },
+        select: { id: true, employeeId: true },
+      });
+      if (!teacher) throw new NotFoundException('[ERR-FAC-4041] Teacher not found');
+
+      // Update Teacher extension fields
+      await tx.teacher.update({
+        where: { id },
         data: {
-          ...(dto.firstName !== undefined && { firstName: dto.firstName }),
-          ...(dto.lastName !== undefined && { lastName: dto.lastName }),
-          ...(dto.email !== undefined && { email: dto.email }),
-          ...(dto.phone !== undefined && { contactPhone: dto.phone }),
           ...(dto.employeeCode !== undefined && { employeeCode: dto.employeeCode }),
           ...(dto.designation !== undefined && { designation: dto.designation }),
           ...(dto.isActive !== undefined && { isActive: dto.isActive }),
@@ -447,7 +501,21 @@ export class AcademicService {
         },
       });
 
-      if (result.count === 0) throw new NotFoundException('[ERR-FAC-4041] Teacher not found');
+      // Sync PII changes to the Employee backbone
+      if (teacher.employeeId && (dto.firstName !== undefined || dto.lastName !== undefined || dto.email !== undefined || dto.phone !== undefined || dto.dateOfBirth !== undefined || dto.dateOfJoining !== undefined)) {
+        await tx.employee.update({
+          where: { id: teacher.employeeId },
+          data: {
+            ...(dto.firstName !== undefined && { firstName: dto.firstName }),
+            ...(dto.lastName !== undefined && { lastName: dto.lastName }),
+            ...(dto.email !== undefined && { email: dto.email }),
+            ...(dto.phone !== undefined && { contactPhone: dto.phone }),
+            ...(dto.dateOfBirth !== undefined && { dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : null }),
+            ...(dto.dateOfJoining !== undefined && { dateOfJoining: dto.dateOfJoining ? new Date(dto.dateOfJoining) : null }),
+            updatedBy: context.userId,
+          },
+        });
+      }
 
       // When subjectIds is explicitly provided (even as []), atomically replace all assignments.
       if (dto.subjectIds !== undefined) {
@@ -712,31 +780,33 @@ export class AcademicService {
 
   // â”€â”€ Class READ / UPDATE / DELETE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  async seedClasses(context: RequestContext): Promise<{ seeded: number }> {
-    // â”€â”€ Step 1: Identify the active academic year â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId: context.tenantId, isActive: true, softDelete: false },
-      select: { id: true, name: true },
-    });
-    if (!activeYear) {
-      throw new BadRequestException(
-        'No active Academic Year found. Please seed Academic Years first before seeding Classes.',
-      );
+  async seedClasses(context: RequestContext, academicYearId?: string): Promise<{ seeded: number }> {
+    // -- Step 1: Resolve the target academic year ----------------------------------------
+    let activeYear: { id: string; name: string } | null = null;
+    if (academicYearId) {
+      activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId: context.tenantId, id: academicYearId, softDelete: false },
+        select: { id: true, name: true },
+      });
+      if (!activeYear) throw new BadRequestException(`No Academic Year found with id: ${academicYearId}.`);
+    } else {
+      activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId: context.tenantId, isActive: true, softDelete: false },
+        select: { id: true, name: true },
+      });
+      if (!activeYear) throw new BadRequestException('No active Academic Year found. Please seed Academic Years first before seeding Classes.');
     }
-
-    // â”€â”€ Step 2: Zombie cleanup â€” hard-delete soft-deleted class rows â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Step 2: Zombie cleanup - scoped to target academic year
     await this.prisma.class.deleteMany({
-      where: { tenantId: context.tenantId, softDelete: true },
+      where: { tenantId: context.tenantId, academicYearId: activeYear.id, softDelete: true },
     });
-
-    // â”€â”€ Step 3: Idempotency guard â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Step 3: Idempotency guard - per academic year
     const existing = await this.prisma.class.count({
-      where: { tenantId: context.tenantId, softDelete: false },
+      where: { tenantId: context.tenantId, academicYearId: activeYear.id, softDelete: false },
     });
     if (existing > 0) {
-      throw new ConflictException('Classes already exist for this school.');
+      throw new ConflictException(`Classes already exist for ${activeYear.name}. Delete them first to re-seed.`);
     }
-
     // â”€â”€ Step 4: Build 12 class records â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const seeds = Array.from({ length: 12 }, (_, i) => ({
       id:            randomUUID(),
@@ -1274,6 +1344,9 @@ export class AcademicService {
   async getTeacher(id: string, tenantId: string) {
     const teacher = await this.prisma.teacher.findFirst({
       where: { id, tenantId, softDelete: false },
+      include: {
+        employee: { select: { id: true, firstName: true, lastName: true, email: true, contactPhone: true, dateOfBirth: true, dateOfJoining: true } },
+      },
     });
     if (!teacher) throw new NotFoundException('[ERR-FAC-4043] Teacher not found');
     return teacher;
@@ -2131,7 +2204,7 @@ export class AcademicService {
    * linking them to the school's active academic year.
    * Throws if master is empty, school has no active year, or school already has classes.
    */
-  async seedClassesFromMaster(context: RequestContext): Promise<{ seeded: number }> {
+  async seedClassesFromMaster(context: RequestContext, academicYearId?: string): Promise<{ seeded: number }> {
     const MASTER = 'MASTER_TEMPLATE';
 
     const masterRows = await this.prisma.class.findMany({
@@ -2142,18 +2215,34 @@ export class AcademicService {
       throw new BadRequestException('Master template Classes not configured. Contact System Admin.');
     }
 
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId: context.tenantId, isActive: true, softDelete: false },
-      select: { id: true, name: true },
-    });
-    if (!activeYear) {
-      throw new BadRequestException('No active Academic Year found for this school. Generate from Master first.');
+    // Resolve the target academic year (explicit or active)
+    let activeYear: { id: string; name: string } | null = null;
+    if (academicYearId) {
+      activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId: context.tenantId, id: academicYearId, softDelete: false },
+        select: { id: true, name: true },
+      });
+      if (!activeYear) throw new BadRequestException(`No Academic Year found with id: ${academicYearId}.`);
+    } else {
+      activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId: context.tenantId, isActive: true, softDelete: false },
+        select: { id: true, name: true },
+      });
+      if (!activeYear) {
+        throw new BadRequestException('No active Academic Year found for this school. Generate from Master first.');
+      }
     }
 
-    await this.prisma.class.deleteMany({ where: { tenantId: context.tenantId, softDelete: true } });
-    const existing = await this.prisma.class.count({ where: { tenantId: context.tenantId, softDelete: false } });
+    // Zombie cleanup — scoped to target academic year only
+    await this.prisma.class.deleteMany({
+      where: { tenantId: context.tenantId, academicYearId: activeYear.id, softDelete: true },
+    });
+    // Idempotency guard — scoped to target academic year
+    const existing = await this.prisma.class.count({
+      where: { tenantId: context.tenantId, academicYearId: activeYear.id, softDelete: false },
+    });
     if (existing > 0) {
-      throw new ConflictException('Classes already exist for this school. Delete them first to re-seed.');
+      throw new ConflictException(`Classes already exist for ${activeYear.name}. Delete them first to re-seed.`);
     }
 
     const data = masterRows.map((m) => ({
@@ -2718,7 +2807,7 @@ export class AcademicService {
     if (viewType === 'teachers') {
       const teachers = await this.prisma.teacher.findMany({
         where: { tenantId, softDelete: false },
-        select: { id: true, firstName: true, lastName: true, employeeCode: true },
+        select: { id: true, employeeCode: true, employee: { select: { firstName: true, lastName: true } } },
       });
 
       type TKey = 'P' | 'OD' | 'SL' | 'CL' | 'A';
@@ -2763,13 +2852,13 @@ export class AcademicService {
       };
 
       const teacherRows = teachers
-        .filter((t) => t.firstName)
+        .filter((t) => t.employee?.firstName)
         .map((t) => {
           const c = tCounters.get(t.id) ?? { P: 0, OD: 0, SL: 0, CL: 0, A: 0 };
           const row: Record<string, unknown> = {
             teacherId: t.id,
             employeeCode: t.employeeCode ?? '',
-            teacherName: `${t.firstName ?? ''} ${t.lastName ?? ''}`.trim(),
+            teacherName: `${t.employee?.firstName ?? ''} ${t.employee?.lastName ?? ''}`.trim(),
             ...c,
             avgSwipeIn: avgTime(swipeInArr.get(t.id) ?? []),
             avgSwipeOut: avgTime(swipeOutArr.get(t.id) ?? []),

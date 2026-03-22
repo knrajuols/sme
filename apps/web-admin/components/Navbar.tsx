@@ -55,14 +55,16 @@ const PLATFORM_GROUPS: NavGroup[] = [
       { href: '/master-data/fee-structures',    label: 'Fee Structures'   },
       { href: '/master-data/academic-calendar', label: 'Academic Calendar'},
       { href: '/master-data/holidays',          label: 'Holiday Management'},
+      { href: '/master-data/org-structure',     label: 'Org Structure'     },
     ],
   },
   {
     label: 'Transport',
     links: [
+      { href: '/transport/routes',      label: 'Route Builder'         },
+      { href: '/transport/stops',       label: 'Stop Master'           },
       { href: '/transport/staff',       label: 'Transport Staff'       },
       { href: '/transport/vehicles',    label: 'Fleet Management'      },
-      { href: '/transport/routes',      label: 'Routes & Stops'        },
       { href: '/transport/allocations', label: 'Student Allocations'   },
     ],
   },

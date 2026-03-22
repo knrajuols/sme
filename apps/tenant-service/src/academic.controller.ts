@@ -205,18 +205,22 @@ export class AcademicController {
   }
 
   @Post('classes/seed')
-  @ApiOperation({ summary: 'Seed Class 1–12 linked to the active Academic Year' })
+  @ApiOperation({ summary: 'Seed Class 1–12 linked to an Academic Year (defaults to active)' })
   async seedClasses(
     @CurrentTenant() tenantId: string,
     @CurrentUser() user: JwtClaims,
+    @Body() body: { academicYearId?: string },
     @Headers('x-correlation-id') correlationIdHeader?: string,
   ): Promise<{ seeded: number }> {
-    return this.academicService.seedClasses({
-      tenantId,
-      userId: user.sub,
-      role: user.roles[0] ?? 'USER',
-      correlationId: correlationIdHeader ?? randomUUID(),
-    });
+    return this.academicService.seedClasses(
+      {
+        tenantId,
+        userId: user.sub,
+        role: user.roles[0] ?? 'USER',
+        correlationId: correlationIdHeader ?? randomUUID(),
+      },
+      body?.academicYearId,
+    );
   }
 
   // ── Sections ───────────────────────────────────────────────────────────────
@@ -1068,19 +1072,23 @@ export class AcademicController {
   }
 
   @Post('classes/seed-from-master')
-  @ApiOperation({ summary: 'Copy master template classes into this school linked to active academic year' })
+  @ApiOperation({ summary: 'Copy master template classes into this school for a specific academic year' })
   @Permissions('CLASS_CREATE')
   async seedClassesFromMaster(
     @CurrentTenant() tenantId: string,
     @CurrentUser() user: JwtClaims,
+    @Body() body: { academicYearId?: string },
     @Headers('x-correlation-id') correlationIdHeader?: string,
   ): Promise<{ seeded: number }> {
-    return this.academicService.seedClassesFromMaster({
-      tenantId,
-      userId: user.sub,
-      role: user.roles[0] ?? 'USER',
-      correlationId: correlationIdHeader ?? randomUUID(),
-    });
+    return this.academicService.seedClassesFromMaster(
+      {
+        tenantId,
+        userId: user.sub,
+        role: user.roles[0] ?? 'USER',
+        correlationId: correlationIdHeader ?? randomUUID(),
+      },
+      body?.academicYearId,
+    );
   }
 
   @Post('sections/seed-from-master')

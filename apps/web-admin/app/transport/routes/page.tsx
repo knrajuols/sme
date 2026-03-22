@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthGuard } from '../../../components/AuthGuard';
-import { apiRequest } from '../../../lib/api';
+import { bffFetch } from '../../../lib/api';
 
 // ── Shared constants ─────────────────────────────────────────────────────────
 
@@ -43,13 +43,36 @@ interface StopForm { id?: string; stopId: string; sequence: string; distanceKm: 
 
 // ── Main Page ────────────────────────────────────────────────────────────────
 
-export default function RoutesAndStopsPage() {
-  const [tab, setTab] = useState<'stops' | 'routes'>('stops');
+const SEED_BFF = '/api/web-admin/transport/seed-master';
+
+export default function RouteBuilderPage() {
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [seeding, setSeeding] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const flash = useCallback((type: 'success' | 'error', text: string) => {
     setToast({ type, text });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 4000);
   }, []);
+
+  const runSeeder = useCallback(async () => {
+    setSeeding(true);
+    try {
+      const result = await bffFetch<{
+        drivers: number; attendants: number; vehicles: number;
+        stops: number; routes: number; trips: number; routeStops: number;
+      }>(SEED_BFF, { method: 'POST' });
+      const total = result.drivers + result.attendants + result.vehicles + result.stops + result.routes + result.trips + result.routeStops;
+      if (total === 0) {
+        flash('success', 'Master data already seeded — nothing new to add.');
+      } else {
+        flash('success', `Seeded: ${result.drivers} drivers, ${result.attendants} attendants, ${result.vehicles} vehicles, ${result.stops} stops, ${result.routes} routes, ${result.trips} trips, ${result.routeStops} route-stops`);
+      }
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      flash('error', e instanceof Error ? e.message : 'Failed to run master seeder.');
+    }
+    setSeeding(false);
+  }, [flash]);
 
   return (
     <AuthGuard>
@@ -61,22 +84,25 @@ export default function RoutesAndStopsPage() {
             }`}>{toast.text}</div>
           )}
           <div className="max-w-7xl mx-auto space-y-6">
-            <div>
-              <h1 className="text-2xl font-bold text-slate-800">Routes &amp; Stops</h1>
-              <p className="text-sm text-slate-500 mt-1">Manage bus stops and build transport routes with assigned trips.</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-slate-800">Route Builder</h1>
+                <p className="text-sm text-slate-500 mt-1">Build transport routes with trips, stops, and vehicle/staff assignments.</p>
+              </div>
+              <button
+                onClick={runSeeder}
+                disabled={seeding}
+                className="px-5 py-2.5 text-sm font-semibold text-white rounded-lg shadow-md transition-all disabled:opacity-60 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700"
+              >
+                {seeding ? (
+                  <span className="flex items-center gap-2">
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                    Seeding Master Template…
+                  </span>
+                ) : '🌱 Run Master Seeder'}
+              </button>
             </div>
-            {/* Tabs */}
-            <div className="flex gap-1 bg-slate-200 rounded-lg p-1 w-fit">
-              {(['stops', 'routes'] as const).map((t) => (
-                <button key={t} onClick={() => setTab(t)}
-                  className={`px-4 py-2 text-sm font-medium rounded-md transition-colors ${
-                    tab === t ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                  }`}>
-                  {t === 'stops' ? 'Stop Master' : 'Route Builder'}
-                </button>
-              ))}
-            </div>
-            {tab === 'stops' ? <StopMaster flash={flash} /> : <RouteBuilder flash={flash} />}
+            <RouteBuilder flash={flash} refreshKey={refreshKey} />
           </div>
         </div>
       )}
@@ -85,139 +111,10 @@ export default function RoutesAndStopsPage() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// ═══  STOP MASTER  ═════════════════════════════════════════════════════════════
-// ═══════════════════════════════════════════════════════════════════════════════
-
-function StopMaster({ flash }: { flash: (t: 'success' | 'error', m: string) => void }) {
-  const [stops, setStops] = useState<Stop[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: '', landmark: '' });
-  const [saving, setSaving] = useState(false);
-
-  const load = useCallback(async () => {
-    setLoading(true);
-    try { setStops(await apiRequest<Stop[]>(STOPS_BFF, { disableTenantValidation: true })); }
-    catch { flash('error', 'Failed to load stops'); }
-    setLoading(false);
-  }, [flash]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const set = (f: 'name' | 'landmark', v: string) => setForm((p) => ({ ...p, [f]: v }));
-
-  const openAdd = () => { setEditId(null); setForm({ name: '', landmark: '' }); setModalOpen(true); };
-  const openEdit = (s: Stop) => { setEditId(s.id); setForm({ name: s.name, landmark: s.landmark ?? '' }); setModalOpen(true); };
-
-  const save = async () => {
-    if (!form.name.trim()) { flash('error', 'Stop name is required.'); return; }
-    setSaving(true);
-    const payload: Record<string, string> = { name: form.name.trim() };
-    if (form.landmark.trim()) payload.landmark = form.landmark.trim();
-    try {
-      if (editId) {
-        await apiRequest(`${STOPS_BFF}/${editId}`, { method: 'PATCH', body: JSON.stringify(payload), disableTenantValidation: true });
-        flash('success', 'Stop updated');
-      } else {
-        await apiRequest(STOPS_BFF, { method: 'POST', body: JSON.stringify(payload), disableTenantValidation: true });
-        flash('success', 'Stop created');
-      }
-      setModalOpen(false); load();
-    } catch { flash('error', 'Failed to save stop'); }
-    setSaving(false);
-  };
-
-  const del = async (id: string) => {
-    if (!confirm('Delete this stop?')) return;
-    try {
-      await apiRequest(`${STOPS_BFF}/${id}`, { method: 'DELETE', disableTenantValidation: true });
-      flash('success', 'Stop deleted'); load();
-    } catch { flash('error', 'Failed to delete stop'); }
-  };
-
-  return (
-    <>
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-slate-500">{stops.length} stop{stops.length !== 1 && 's'}</p>
-        <button onClick={openAdd}
-          className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700">
-          + Add Stop
-        </button>
-      </div>
-
-      {loading && <p className="text-sm text-slate-500 py-8 text-center">Loading...</p>}
-
-      {!loading && stops.length === 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-8 text-center">
-          <p className="text-sm text-slate-500">No stops defined. Add stops before building routes.</p>
-        </div>
-      )}
-
-      {!loading && stops.length > 0 && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-slate-50">
-                <th className="text-left px-4 py-3 font-medium text-slate-600">#</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Name</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-600">Landmark</th>
-                <th className="text-right px-4 py-3 font-medium text-slate-600">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {stops.map((s, i) => (
-                <tr key={s.id} className="border-t border-slate-100 hover:bg-slate-50/50">
-                  <td className="px-4 py-2 text-slate-400">{i + 1}</td>
-                  <td className="px-4 py-2 font-medium text-slate-800">{s.name}</td>
-                  <td className="px-4 py-2 text-slate-500">{s.landmark ?? '—'}</td>
-                  <td className="px-4 py-2 text-right">
-                    <button onClick={() => openEdit(s)} className="text-xs text-indigo-600 hover:text-indigo-800 font-medium mr-3">Edit</button>
-                    <button onClick={() => del(s.id)} className="text-xs text-red-500 hover:text-red-700 font-medium">Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Modal */}
-      {modalOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/30" onClick={() => setModalOpen(false)} />
-          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-slate-800">{editId ? 'Edit Stop' : 'Add Stop'}</h3>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
-              <input type="text" value={form.name} onChange={(e) => set('name', e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300" />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Landmark</label>
-              <input type="text" value={form.landmark} onChange={(e) => set('landmark', e.target.value)}
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-300" />
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button onClick={() => setModalOpen(false)}
-                className="px-4 py-2 text-sm text-slate-600 bg-slate-100 rounded-lg hover:bg-slate-200">Cancel</button>
-              <button onClick={save} disabled={saving}
-                className="px-4 py-2 text-sm text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
-                {saving ? 'Saving...' : editId ? 'Update' : 'Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // ═══  ROUTE BUILDER  ═══════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function RouteBuilder({ flash }: { flash: (t: 'success' | 'error', m: string) => void }) {
+function RouteBuilder({ flash, refreshKey }: { flash: (t: 'success' | 'error', m: string) => void; refreshKey: number }) {
   const [routes, setRoutes] = useState<TransportRoute[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -237,24 +134,29 @@ function RouteBuilder({ flash }: { flash: (t: 'success' | 'error', m: string) =>
 
   const loadRoutes = useCallback(async () => {
     setLoading(true);
-    try { setRoutes(await apiRequest<TransportRoute[]>(ROUTES_BFF, { disableTenantValidation: true })); }
-    catch { flash('error', 'Failed to load routes'); }
+    try {
+      const data = await bffFetch<TransportRoute[]>(ROUTES_BFF);
+      setRoutes(Array.isArray(data) ? data : []);
+    } catch {
+      // Graceful empty state — no error toast on initial load
+      setRoutes([]);
+    }
     setLoading(false);
-  }, [flash]);
+  }, []);
 
   const loadRefs = useCallback(async () => {
     try {
       const [d, a, v, s] = await Promise.all([
-        apiRequest<DriverRef[]>(DRIVERS_BFF, { disableTenantValidation: true }),
-        apiRequest<AttendantRef[]>(ATTENDANTS_BFF, { disableTenantValidation: true }),
-        apiRequest<VehicleRef[]>(VEHICLES_BFF, { disableTenantValidation: true }),
-        apiRequest<Stop[]>(STOPS_BFF, { disableTenantValidation: true }),
+        bffFetch<DriverRef[]>(DRIVERS_BFF),
+        bffFetch<AttendantRef[]>(ATTENDANTS_BFF),
+        bffFetch<VehicleRef[]>(VEHICLES_BFF),
+        bffFetch<Stop[]>(STOPS_BFF),
       ]);
       setDrivers(d); setAttendants(a); setVehicles(v); setAllStops(s);
     } catch { /* non-critical */ }
   }, []);
 
-  useEffect(() => { loadRoutes(); loadRefs(); }, [loadRoutes, loadRefs]);
+  useEffect(() => { loadRoutes(); loadRefs(); }, [loadRoutes, loadRefs, refreshKey]);
 
   const selectedRoute = useMemo(() => routes.find((r) => r.id === selectedId) ?? null, [routes, selectedId]);
 
@@ -308,14 +210,14 @@ function RouteBuilder({ flash }: { flash: (t: 'success' | 'error', m: string) =>
     try {
       if (detailMode === 'create') {
         const payload = { code: routeForm.code.trim(), name: routeForm.name.trim(), description: routeForm.description.trim() || undefined, trips, stops };
-        const res = await apiRequest<{ id: string }>(ROUTES_BFF, { method: 'POST', body: JSON.stringify(payload), disableTenantValidation: true });
+        const res = await bffFetch<{ id: string }>(ROUTES_BFF, { method: 'POST', body: JSON.stringify(payload) });
         flash('success', 'Route created');
         await loadRoutes();
         setSelectedId(res.id);
         setDetailMode('view');
       } else if (detailMode === 'edit' && selectedId) {
         const payload = { code: routeForm.code.trim(), name: routeForm.name.trim(), description: routeForm.description.trim() || undefined, trips, stops };
-        await apiRequest(`${ROUTES_BFF}/${selectedId}`, { method: 'PUT', body: JSON.stringify(payload), disableTenantValidation: true });
+        await bffFetch(`${ROUTES_BFF}/${selectedId}`, { method: 'PUT', body: JSON.stringify(payload) });
         flash('success', 'Route saved');
         await loadRoutes();
         setDetailMode('view');
@@ -327,7 +229,7 @@ function RouteBuilder({ flash }: { flash: (t: 'success' | 'error', m: string) =>
   const deleteRoute = async () => {
     if (!selectedId || !confirm('Delete this route and all its trips/stops?')) return;
     try {
-      await apiRequest(`${ROUTES_BFF}/${selectedId}`, { method: 'DELETE', disableTenantValidation: true });
+      await bffFetch(`${ROUTES_BFF}/${selectedId}`, { method: 'DELETE' });
       flash('success', 'Route deleted');
       setSelectedId(null); setDetailMode('view');
       loadRoutes();

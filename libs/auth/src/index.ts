@@ -7,6 +7,7 @@ export * from './guards/api-key.guard';
 export * from './guards/jwt-auth.guard';
 export * from './guards/module.guard';
 export * from './guards/permission.guard';
+export * from './guards/require-setup.guard';
 export * from './guards/tenant-scope.guard';
 export * from './interfaces/jwt-claims.interface';
 export * from './interfaces/request-context.interface';

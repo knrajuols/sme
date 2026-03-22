@@ -31,9 +31,13 @@ function err(code: string, msg: string, status: number): NextResponse {
 // ── POST /api/web-admin/fee-structures/seed ───────────────────────────────────
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
+    // Forward the request body (which may contain { academicYearId }) so the
+    // backend can seed for the correct year, not just the active year.
+    const reqBody = await req.text();
     const upstream = await fetch(`${TENANT_SVC}/web-admin/fee-structures/seed`, {
       method: 'POST',
       headers: upstreamHeaders(req, 'POST /web-admin/fee-structures/seed'),
+      body: reqBody || undefined,
     });
     const body: unknown = await upstream.json().catch(() => ({}));
     if (!upstream.ok) {

@@ -2,6 +2,19 @@ import { forceLogout, getToken } from './auth';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:3000';
 
+// ── Password-reset redirect ──────────────────────────────────────────────────
+/**
+ * [SEC-AUTH-006] If any API call returns 403 with the "Password reset required"
+ * message, force-redirect the user back to the setup-password page.
+ */
+function handlePasswordResetRequired(status: number, body: unknown): void {
+  if (status !== 403 || typeof window === 'undefined') return;
+  const msg = (body as Record<string, unknown>)?.message;
+  if (typeof msg === 'string' && msg.includes('Password reset required')) {
+    window.location.href = '/staff/setup-password';
+  }
+}
+
 // ── Envelope shape emitted by NestJS ResponseEnvelopeInterceptor ─────────────
 interface ApiEnvelope<T> {
   status: string;
@@ -52,6 +65,10 @@ export async function apiRequest<T>(path: string, init: RequestInit = {}): Promi
   }
 
   const body = await response.json().catch(() => ({}));
+
+  // [SEC-AUTH-006] Backend enforcement of forced password reset.
+  handlePasswordResetRequired(response.status, body);
+
   if (!response.ok) {
     throw new Error(body?.message ?? 'Request failed');
   }
@@ -85,6 +102,9 @@ export async function bffFetch<T>(url: string, opts?: RequestInit): Promise<T> {
   }
 
   const body: unknown = await res.json().catch(() => ({}));
+
+  // [SEC-AUTH-006] Backend enforcement of forced password reset.
+  handlePasswordResetRequired(res.status, body);
 
   if (!res.ok) {
     const msg = (body as Record<string, unknown>)?.message ?? `Request failed (${res.status})`;

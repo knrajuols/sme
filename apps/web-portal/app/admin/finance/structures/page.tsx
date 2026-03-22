@@ -11,7 +11,7 @@ import { PremiumCard } from '../../../../components/ui/PremiumCard';
 // ── Reference types ───────────────────────────────────────────────────────────
 interface YearRef     { id: string; name: string; }
 interface ClassRef    { id: string; name: string; code: string; academicYearId: string; }
-interface CategoryRef { id: string; name: string; }
+interface CategoryRef { id: string; name: string; parentId?: string | null; }
 
 // ── Domain types ──────────────────────────────────────────────────────────────
 interface FeeStructure {
@@ -72,6 +72,22 @@ function formatCurrency(amount: number | null): string {
 function formatDate(d: string | null): string {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+// -- Sort helpers --------------------------------------------------------------
+type SortCol = 'year' | 'class' | 'amount' | 'dueDate';
+type SortDir = 'asc' | 'desc';
+
+function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <span className="ml-1 text-slate-300 text-xs">&#x2195;</span>;
+  return <span className="ml-1 text-indigo-500 text-xs">{dir === 'asc' ? '\u2191' : '\u2193'}</span>;
+}
+
+// -- Category group type -------------------------------------------------------
+interface CategoryGroup {
+  groupKey: string;
+  groupName: string;
+  items: FeeStructure[];
 }
 
 // ── Slide-over panel ──────────────────────────────────────────────────────────
@@ -310,6 +326,12 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
   const [filterYear, setFilterYear]   = useState('');
   const [filterClass, setFilterClass] = useState('');
 
+  // Category accordion + sort state
+  const [filterCategory, setFilterCategory]           = useState('');
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [sortCol, setSortCol]                         = useState<SortCol>('class');
+  const [sortDir, setSortDir]                         = useState<SortDir>('asc');
+
   function showBanner(type: 'success' | 'error', msg: string) {
     setBanner({ type, msg });
     setTimeout(() => setBanner(null), 4000);
@@ -383,6 +405,81 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
   function yearName(id: string): string {
     return years.find((y) => y.id === id)?.name ?? '—';
   }
+
+  function toggleCategory(key: string) {
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  function toggleSort(col: SortCol) {
+    if (sortCol === col) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortCol(col);
+      setSortDir('asc');
+    }
+  }
+
+  // Unique category groups for the filter dropdown (derived from loaded data)
+  const categoryGroupOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const r of rows) {
+      const cat = categories.find(c => c.id === r.feeCategoryId);
+      const gKey = cat?.parentId ?? r.feeCategoryId;
+      const parentCat = cat?.parentId ? categories.find(c => c.id === cat.parentId) : cat;
+      seen.set(gKey, parentCat?.name ?? cat?.name ?? '—');
+    }
+    return Array.from(seen.entries())
+      .map(([id, name]) => ({ id, name }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [rows, categories]);
+
+  // Grouped, filtered, and sorted data pipeline (year/class are backend-filtered; category is client-side)
+  const grouped = useMemo<CategoryGroup[]>(() => {
+    // 1. Client-side category group filter
+    let list = filterCategory
+      ? rows.filter(r => {
+          const cat = categories.find(c => c.id === r.feeCategoryId);
+          return (cat?.parentId ?? r.feeCategoryId) === filterCategory;
+        })
+      : rows;
+
+    // 2. Sort items within groups
+    const sorted = [...list].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === 'year') {
+        const yA = years.find(y => y.id === a.academicYearId)?.name ?? '';
+        const yB = years.find(y => y.id === b.academicYearId)?.name ?? '';
+        cmp = yA.localeCompare(yB);
+      } else if (sortCol === 'class') {
+        const cA = classes.find(c => c.id === a.classId);
+        const cB = classes.find(c => c.id === b.classId);
+        cmp = (cA ? `${cA.name} ${cA.code}` : '').localeCompare(cB ? `${cB.name} ${cB.code}` : '');
+      } else if (sortCol === 'amount') {
+        cmp = (a.amount ?? 0) - (b.amount ?? 0);
+      } else {
+        cmp = new Date(a.dueDate ?? 0).getTime() - new Date(b.dueDate ?? 0).getTime();
+      }
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+
+    // 3. Group by parent category (leaf items group under their parent)
+    const groupMap = new Map<string, CategoryGroup>();
+    for (const item of sorted) {
+      const cat = categories.find(c => c.id === item.feeCategoryId);
+      const gKey = cat?.parentId ?? item.feeCategoryId;
+      const parentCat = cat?.parentId ? categories.find(c => c.id === cat.parentId) : cat;
+      const gName = parentCat?.name ?? cat?.name ?? '—';
+      if (!groupMap.has(gKey)) groupMap.set(gKey, { groupKey: gKey, groupName: gName, items: [] });
+      groupMap.get(gKey)!.items.push(item);
+    }
+
+    // 4. Sort groups alphabetically
+    return Array.from(groupMap.values()).sort((a, b) => a.groupName.localeCompare(b.groupName));
+  }, [rows, filterCategory, sortCol, sortDir, categories, years, classes]);
 
   async function handleSave(form: StructureForm | UpdateForm) {
     setSaving(true);
@@ -516,9 +613,24 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
             </select>
           </div>
 
-          {(filterYear || filterClass) && (
+          {/* Category filter */}
+          <div className="flex flex-col gap-1 min-w-[180px]">
+            <label className="text-xs font-semibold text-slate-600">Category</label>
+            <select
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
+              value={filterCategory}
+              onChange={(e) => setFilterCategory(e.target.value)}
+            >
+              <option value="">All Categories</option>
+              {categoryGroupOptions.map(g => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {(filterYear || filterClass || filterCategory) && (
             <button
-              onClick={() => applyFilters('', '')}
+              onClick={() => { applyFilters('', ''); setFilterCategory(''); }}
               className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:bg-slate-100 transition-colors"
             >
               Clear
@@ -550,75 +662,148 @@ function FeeStructuresPage({ user: _user }: { user: UserClaims }) {
             <table className="grand-table hidden md:table w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Year</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Class</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Category</th>
-                  <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
-                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide">Due Date</th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide w-52">
+                    Fee Item
+                  </th>
+                  <th
+                    className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600 transition-colors"
+                    onClick={() => toggleSort('year')}
+                  >
+                    <span className="flex items-center gap-0.5">Year <SortIcon active={sortCol === 'year'} dir={sortDir} /></span>
+                  </th>
+                  <th
+                    className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600 transition-colors"
+                    onClick={() => toggleSort('class')}
+                  >
+                    <span className="flex items-center gap-0.5">Class <SortIcon active={sortCol === 'class'} dir={sortDir} /></span>
+                  </th>
+                  <th
+                    className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600 transition-colors"
+                    onClick={() => toggleSort('amount')}
+                  >
+                    <span className="flex items-center justify-end gap-0.5">Amount <SortIcon active={sortCol === 'amount'} dir={sortDir} /></span>
+                  </th>
+                  <th
+                    className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wide cursor-pointer select-none hover:text-indigo-600 transition-colors"
+                    onClick={() => toggleSort('dueDate')}
+                  >
+                    <span className="flex items-center gap-0.5">Due Date <SortIcon active={sortCol === 'dueDate'} dir={sortDir} /></span>
+                  </th>
                   <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {rows.map((r) => (
-                  <tr key={r.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-3 text-slate-600">{yearName(r.academicYearId)}</td>
-                    <td className="px-5 py-3 text-slate-700 font-medium">{className(r.classId)}</td>
-                    <td className="px-5 py-3 text-slate-700">{categoryName(r.feeCategoryId)}</td>
-                    <td className="px-5 py-3 text-right font-semibold text-slate-900 tabular-nums">
-                      {formatCurrency(r.amount)}
+                {grouped.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-5 py-12 text-center text-sm text-slate-400">
+                      No fee structures match the current filters.
                     </td>
-                    <td className="px-5 py-3 text-slate-600">{formatDate(r.dueDate)}</td>
-                    <td className="px-5 py-3 text-right">
-                      <div className="inline-flex gap-2">
+                  </tr>
+                )}
+                {grouped.flatMap(group => {
+                  const isOpen = !collapsedCategories.has(group.groupKey);
+                  const headerRow = (
+                    <tr
+                      key={`grp-${group.groupKey}`}
+                      className="bg-slate-100 cursor-pointer hover:bg-slate-200 transition-colors"
+                      onClick={() => toggleCategory(group.groupKey)}
+                    >
+                      <td colSpan={6} className="px-4 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-slate-500 font-mono w-4 text-center flex-shrink-0">
+                            {isOpen ? '\u25BC' : '\u25B6'}
+                          </span>
+                          <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                            {group.groupName}
+                          </span>
+                          <span className="ml-1 text-[11px] text-slate-400 font-normal">
+                            ({group.items.length} item{group.items.length !== 1 ? 's' : ''})
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                  const itemRows = isOpen
+                    ? group.items.map(r => (
+                        <tr key={r.id} className="hover:bg-slate-50 transition-colors">
+                          <td className="pl-10 pr-5 py-3 text-slate-700 font-medium">{categoryName(r.feeCategoryId)}</td>
+                          <td className="px-5 py-3 text-slate-600">{yearName(r.academicYearId)}</td>
+                          <td className="px-5 py-3 text-slate-700">{className(r.classId)}</td>
+                          <td className="px-5 py-3 text-right font-semibold text-slate-900 tabular-nums">
+                            {formatCurrency(r.amount)}
+                          </td>
+                          <td className="px-5 py-3 text-slate-600">{formatDate(r.dueDate)}</td>
+                          <td className="px-5 py-3 text-right">
+                            <div className="inline-flex gap-2">
+                              <button
+                                onClick={() => openEdit(r)}
+                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => handleDelete(r.id)}
+                                disabled={deleting === r.id}
+                                className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                              >
+                                {deleting === r.id ? '\u2026' : 'Delete'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    : [];
+                  return [headerRow, ...itemRows];
+                })}
+              </tbody>
+            </table>
+
+            {/* Mobile cards — grouped accordion */}
+            <div className="md:hidden divide-y divide-slate-100">
+              {grouped.length === 0 && (
+                <p className="p-6 text-center text-sm text-slate-400">No fee structures match the current filters.</p>
+              )}
+              {grouped.map(group => (
+                <div key={group.groupKey}>
+                  {/* Category group header */}
+                  <div
+                    className="flex items-center gap-2 px-4 py-2.5 bg-slate-100 cursor-pointer hover:bg-slate-200 transition-colors"
+                    onClick={() => toggleCategory(group.groupKey)}
+                  >
+                    <span className="text-[11px] text-slate-500 font-mono w-4">
+                      {!collapsedCategories.has(group.groupKey) ? '\u25BC' : '\u25B6'}
+                    </span>
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-700">{group.groupName}</span>
+                    <span className="text-[11px] text-slate-400">({group.items.length})</span>
+                  </div>
+                  {/* Item cards */}
+                  {!collapsedCategories.has(group.groupKey) && group.items.map(r => (
+                    <div key={r.id} className="p-4 pl-8">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="font-semibold text-slate-800">{categoryName(r.feeCategoryId)}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{className(r.classId)} &middot; {yearName(r.academicYearId)}</p>
+                        </div>
+                        <span className="text-sm font-bold text-slate-900 tabular-nums">{formatCurrency(r.amount)}</span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">Due: {formatDate(r.dueDate)}</p>
+                      <div className="flex gap-2 mt-3">
                         <button
                           onClick={() => openEdit(r)}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                          className="flex-1 rounded-lg border border-slate-200 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                         >
                           Edit
                         </button>
                         <button
                           onClick={() => handleDelete(r.id)}
                           disabled={deleting === r.id}
-                          className="rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
+                          className="flex-1 rounded-lg border border-red-200 bg-red-50 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
                         >
-                          {deleting === r.id ? '…' : 'Delete'}
+                          {deleting === r.id ? '\u2026' : 'Delete'}
                         </button>
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            {/* Mobile cards */}
-            <div className="md:hidden divide-y divide-slate-100">
-              {rows.map((r) => (
-                <div key={r.id} className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <p className="font-semibold text-slate-800">{categoryName(r.feeCategoryId)}</p>
-                      <p className="text-xs text-slate-500 mt-0.5">{className(r.classId)} · {yearName(r.academicYearId)}</p>
                     </div>
-                    <span className="text-sm font-bold text-slate-900 tabular-nums">
-                      {formatCurrency(r.amount)}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">Due: {formatDate(r.dueDate)}</p>
-                  <div className="flex gap-2 mt-3">
-                    <button
-                      onClick={() => openEdit(r)}
-                      className="flex-1 rounded-lg border border-slate-200 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => handleDelete(r.id)}
-                      disabled={deleting === r.id}
-                      className="flex-1 rounded-lg border border-red-200 bg-red-50 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 disabled:opacity-50 transition-colors"
-                    >
-                      {deleting === r.id ? '…' : 'Delete'}
-                    </button>
-                  </div>
+                  ))}
                 </div>
               ))}
             </div>

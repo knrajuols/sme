@@ -12,6 +12,10 @@ interface TokenInput {
   sessionId: string;
   /** Login email — embedded in token for UI display only. */
   email?: string;
+  /** True when staff must change their default password before accessing the platform. */
+  requiresPasswordChange?: boolean;
+  /** The employee's EmployeeRole.systemCategory — enables future RBAC decisions. */
+  systemCategory?: string;
   expiresInSeconds?: number;
 }
 
@@ -34,6 +38,8 @@ export class JwtTokenService {
       permissions: input.permissions ?? [],
       sessionId: input.sessionId,
       ...(input.email ? { email: input.email } : {}),
+      ...(input.requiresPasswordChange != null ? { requiresPasswordChange: input.requiresPasswordChange } : {}),
+      ...(input.systemCategory ? { systemCategory: input.systemCategory } : {}),
       iat: issuedAt,
       exp: issuedAt + expiresIn,
     };

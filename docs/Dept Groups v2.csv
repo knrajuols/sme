@@ -1,0 +1,45 @@
+﻿Organizational Grouping,Department Name,Specific Role,System Category Enum
+Core Academics,Academics,Teacher,ACADEMIC_STAFF
+,Academics,Subject HOD,ACADEMIC_HOD
+,Academics,Coordinator,ACADEMIC_COORDINATOR
+,Examinations,Exam Coordinator,EXAM_COORDINATOR
+,Examinations,Invigilator,EXAM_INVIGILATOR
+,Digital Learning / eLearning,Content Creator,DIGITAL_CONTENT_CREATOR
+,Digital Learning / eLearning,LMS Admin,LMS_ADMIN
+,Academic Research (Optional),Curriculum Designer,CURRICULUM_DESIGNER
+Administration,Management & Executive,Principal,PRINCIPAL
+,Management & Executive,Director,DIRECTOR
+,Management & Executive,Board Member,BOARD_MEMBER
+,Admissions & Front Office,Receptionist,RECEPTIONIST
+,Admissions & Front Office,Admissions Counselor,ADMISSIONS_COUNSELOR
+,IT / Administration,System Admin,SYS_ADMIN
+,IT / Administration,Data Entry Operator,DATA_ENTRY_STAFF
+Ops & Finance,Finance & Accounts,Accountant,FINANCE_ACCOUNTANT
+,Finance & Accounts,Fee Collector,FEE_COLLECTOR
+,Human Resources,HR Manager,HR_MANAGER
+,Human Resources,Recruiter,HR_RECRUITER
+,Legal & Compliance,Compliance Officer,LEGAL_STAFF
+,Procurement & Stores,Store Manager,STORE_MANAGER
+,Procurement & Stores,Purchase Officer,PURCHASE_OFFICER
+Growth & Outreach,Marketing & Branding,Marketing Manager,MARKETING_STAFF
+,Marketing & Branding,SEO Specialist,MARKETING_STAFF
+,Communications & Alumni,PR Officer,COMMUNICATION_STAFF
+,Communications & Alumni,Event Coordinator,EVENT_COORDINATOR
+Campus Services,Transport,Bus Driver,DRIVER
+,Transport,Fleet Manager,FLEET_MANAGER
+,Transport,Attendant,ATTENDANT
+,Facilities & Maintenance,Estate Manager,ESTATE_MANAGER
+,Facilities & Maintenance,Electrician,MAINTENANCE_STAFF
+,Facilities & Maintenance,Janitor,JANITORIAL_STAFF
+,Security,Chief Security Officer,SECURITY_OFFICER
+,Security,Gate Guard,SECURITY_GUARD
+,Cafeteria / Mess,Catering Manager,CATERING_MANAGER
+,Cafeteria / Mess,Chef,CAFETERIA_STAFF
+Student Life,Medical & Wellness,School Nurse,SCHOOL_NURSE
+,Medical & Wellness,Psychologist,SCHOOL_PSYCHOLOGIST
+,Library,Librarian,LIBRARIAN
+,Library,Assistant Librarian,ASSISTANT_LIBRARIAN
+,Sports & Physical Education,Coach,SPORTS_COACH
+,Sports & Physical Education,PE Instructor,PE_INSTRUCTOR
+,Hostel & Boarding,Warden,HOSTEL_WARDEN
+,Hostel & Boarding,Dorm Supervisor,DORM_SUPERVISOR

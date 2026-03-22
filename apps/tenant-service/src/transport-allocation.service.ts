@@ -22,6 +22,57 @@ export class TransportAllocationService {
   constructor(private readonly prisma: PrismaService) {}
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // ═══  STUDENTS GRID (all students with allocation status)  ═════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async getStudentsGrid(tenantId: string) {
+    return this.prisma.student.findMany({
+      where: { tenantId, softDelete: false, status: 'ACTIVE' },
+      select: {
+        id: true,
+        admissionNumber: true,
+        firstName: true,
+        lastName: true,
+        enrollments: {
+          where: { softDelete: false },
+          select: {
+            rollNumber: true,
+            class: { select: { name: true } },
+            section: { select: { name: true } },
+            academicYear: { select: { id: true, name: true } },
+          },
+          orderBy: { createdAt: 'desc' as const },
+          take: 1,
+        },
+        transportAllocations: {
+          where: { softDelete: false, isActive: true },
+          select: {
+            id: true,
+            routeId: true,
+            route: { select: { code: true, name: true } },
+            pickupTripId: true,
+            pickupStopId: true,
+            pickupStop: {
+              select: { stop: { select: { name: true } } },
+            },
+            dropTripId: true,
+            dropStopId: true,
+            dropStop: {
+              select: { stop: { select: { name: true } } },
+            },
+            academicYearId: true,
+            startDate: true,
+            endDate: true,
+          },
+          orderBy: { createdAt: 'desc' as const },
+          take: 1,
+        },
+      },
+      orderBy: [{ firstName: 'asc' }],
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   // ═══  LIST ALLOCATIONS  ════════════════════════════════════════════════════
   // ═══════════════════════════════════════════════════════════════════════════
 

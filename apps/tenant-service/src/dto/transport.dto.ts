@@ -9,6 +9,7 @@ import {
   IsArray,
   ValidateNested,
   Min,
+  MinLength,
   MaxLength,
   Matches,
 } from 'class-validator';
@@ -18,11 +19,37 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 // ── Driver ──────────────────────────────────────────────────────────────────
 
 export class CreateDriverDto {
-  @ApiProperty() @IsString() @MaxLength(200)
-  name!: string;
+  @ApiProperty({ example: 'Rajesh', description: 'First name (stored on Employee backbone)' })
+  @IsString() @MinLength(2) @MaxLength(100)
+  firstName!: string;
 
-  @ApiProperty() @IsString() @MaxLength(20)
-  mobile!: string;
+  @ApiPropertyOptional({ example: 'Kumar', description: 'Last name (stored on Employee backbone)' })
+  @IsOptional() @IsString() @MaxLength(100)
+  lastName?: string;
+
+  @ApiProperty({ example: '+91-9876543210', description: 'Phone (stored on Employee backbone)' })
+  @IsString() @MaxLength(20)
+  phone!: string;
+
+  @ApiPropertyOptional({ example: 'rajesh@school.edu', description: 'Email (stored on Employee backbone)' })
+  @IsOptional() @IsString() @MaxLength(200)
+  email?: string;
+
+  @ApiProperty({ description: 'Department ID for the unified Employee record' })
+  @IsString()
+  departmentId!: string;
+
+  @ApiProperty({ description: 'Employee Role ID for the unified Employee record' })
+  @IsString()
+  roleId!: string;
+
+  @ApiPropertyOptional({ example: '1990-05-15', description: 'Date of birth (ISO 8601)' })
+  @IsOptional() @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ example: '2024-06-01', description: 'Date of joining (ISO 8601)' })
+  @IsOptional() @IsDateString()
+  dateOfJoining?: string;
 
   @ApiProperty() @IsString() @MaxLength(50)
   licenseNumber!: string;
@@ -41,12 +68,32 @@ export class CreateDriverDto {
 }
 
 export class UpdateDriverDto {
-  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200)
-  name?: string;
+  // ── PII fields (propagated to Employee backbone) ──────────────────────────
+  @ApiPropertyOptional({ example: 'Rajesh', description: 'First name (synced to Employee)' })
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(100)
+  firstName?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20)
-  mobile?: string;
+  @ApiPropertyOptional({ example: 'Kumar', description: 'Last name (synced to Employee)' })
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(100)
+  lastName?: string;
 
+  @ApiPropertyOptional({ example: 'rajesh@school.edu', description: 'Email (synced to Employee)' })
+  @IsOptional() @IsString() @MaxLength(200)
+  email?: string;
+
+  @ApiPropertyOptional({ example: '+91-9876543210', description: 'Phone (synced to Employee)' })
+  @IsOptional() @IsString() @MaxLength(20)
+  phone?: string;
+
+  @ApiPropertyOptional({ example: '1990-05-15', description: 'Date of birth (ISO 8601, synced to Employee)' })
+  @IsOptional() @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ example: '2024-06-01', description: 'Date of joining (ISO 8601, synced to Employee)' })
+  @IsOptional() @IsDateString()
+  dateOfJoining?: string;
+
+  // ── Transport-specific domain fields ──────────────────────────────────────
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(50)
   licenseNumber?: string;
 
@@ -69,23 +116,69 @@ export class UpdateDriverDto {
 // ── Attendant ───────────────────────────────────────────────────────────────
 
 export class CreateAttendantDto {
-  @ApiProperty() @IsString() @MaxLength(200)
-  name!: string;
+  @ApiProperty({ example: 'Suresh', description: 'First name (stored on Employee backbone)' })
+  @IsString() @MinLength(2) @MaxLength(100)
+  firstName!: string;
 
-  @ApiProperty() @IsString() @MaxLength(20)
-  mobile!: string;
+  @ApiPropertyOptional({ example: 'Nair', description: 'Last name (stored on Employee backbone)' })
+  @IsOptional() @IsString() @MaxLength(100)
+  lastName?: string;
+
+  @ApiProperty({ example: '+91-9876543210', description: 'Phone (stored on Employee backbone)' })
+  @IsString() @MaxLength(20)
+  phone!: string;
+
+  @ApiPropertyOptional({ example: 'suresh@school.edu', description: 'Email (stored on Employee backbone)' })
+  @IsOptional() @IsString() @MaxLength(200)
+  email?: string;
+
+  @ApiProperty({ description: 'Department ID for the unified Employee record' })
+  @IsString()
+  departmentId!: string;
+
+  @ApiProperty({ description: 'Employee Role ID for the unified Employee record' })
+  @IsString()
+  roleId!: string;
+
+  @ApiPropertyOptional({ example: '1990-05-15', description: 'Date of birth (ISO 8601)' })
+  @IsOptional() @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ example: '2024-06-01', description: 'Date of joining (ISO 8601)' })
+  @IsOptional() @IsDateString()
+  dateOfJoining?: string;
 
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(30)
   policeVerificationStatus?: string;
 }
 
 export class UpdateAttendantDto {
-  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(200)
-  name?: string;
+  // ── PII fields (propagated to Employee backbone) ──────────────────────────
+  @ApiPropertyOptional({ example: 'Suresh', description: 'First name (synced to Employee)' })
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(100)
+  firstName?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(20)
-  mobile?: string;
+  @ApiPropertyOptional({ example: 'Nair', description: 'Last name (synced to Employee)' })
+  @IsOptional() @IsString() @MinLength(2) @MaxLength(100)
+  lastName?: string;
 
+  @ApiPropertyOptional({ example: 'suresh@school.edu', description: 'Email (synced to Employee)' })
+  @IsOptional() @IsString() @MaxLength(200)
+  email?: string;
+
+  @ApiPropertyOptional({ example: '+91-9876543210', description: 'Phone (synced to Employee)' })
+  @IsOptional() @IsString() @MaxLength(20)
+  phone?: string;
+
+  @ApiPropertyOptional({ example: '1990-05-15', description: 'Date of birth (ISO 8601, synced to Employee)' })
+  @IsOptional() @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ example: '2024-06-01', description: 'Date of joining (ISO 8601, synced to Employee)' })
+  @IsOptional() @IsDateString()
+  dateOfJoining?: string;
+
+  // ── Transport-specific domain fields ──────────────────────────────────────
   @ApiPropertyOptional() @IsOptional() @IsString() @MaxLength(30)
   policeVerificationStatus?: string;
 

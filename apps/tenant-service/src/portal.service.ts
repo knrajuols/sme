@@ -7,10 +7,12 @@ import { PrismaService } from './prisma/prisma.service';
 export interface TeacherSummary {
   teacher: {
     id: string;
-    firstName: string | null;
-    lastName: string | null;
     designation: string;
     employeeCode: string;
+    employee: {
+      firstName: string;
+      lastName: string | null;
+    } | null;
   };
   assignments: Array<{
     id: string;
@@ -75,7 +77,7 @@ export interface TimetableEntry {
   subject: { id: string; name: string; code: string };
   class:   { id: string; name: string; code: string };
   section: { id: string; name: string };
-  teacher: { id: string; firstName: string | null; lastName: string | null; employeeCode: string };
+  teacher: { id: string; employeeCode: string; employee: { firstName: string; lastName: string | null } | null };
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -97,10 +99,9 @@ export class PortalService {
       where: { tenantId, userId, softDelete: false },
       select: {
         id: true,
-        firstName: true,
-        lastName: true,
         designation: true,
         employeeCode: true,
+        employee: { select: { firstName: true, lastName: true } },
       },
     });
 
@@ -287,7 +288,7 @@ export class PortalService {
         subject: { select: { id: true, name: true, code: true } },
         class:   { select: { id: true, name: true, code: true } },
         section: { select: { id: true, name: true } },
-        teacher: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
+        teacher: { select: { id: true, employeeCode: true, employee: { select: { firstName: true, lastName: true } } } },
       },
       orderBy: [
         { dayOfWeek:        'asc' },
@@ -372,7 +373,7 @@ export class PortalService {
         subject: { select: { id: true, name: true, code: true } },
         class:   { select: { id: true, name: true, code: true } },
         section: { select: { id: true, name: true } },
-        teacher: { select: { id: true, firstName: true, lastName: true, employeeCode: true } },
+        teacher: { select: { id: true, employeeCode: true, employee: { select: { firstName: true, lastName: true } } } },
       },
       orderBy: [
         { dayOfWeek:        'asc' },

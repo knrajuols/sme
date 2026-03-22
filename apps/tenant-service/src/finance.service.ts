@@ -788,17 +788,25 @@ export class FinanceService {
       if (ty) yearMap.set(my.id, ty.id);
     }
 
+    // Fetch classes WITH academicYearId so we match by code + year
     const masterClasses = await this.prisma.class.findMany({
       where: { tenantId: MASTER, softDelete: false },
-      select: { id: true, code: true },
+      select: { id: true, code: true, academicYearId: true },
     });
     const tenantClasses = await this.prisma.class.findMany({
       where: { tenantId, softDelete: false },
-      select: { id: true, code: true },
+      select: { id: true, code: true, academicYearId: true },
     });
+
+    // Build a composite map: masterClassId → tenantClassId
+    // Match by code AND academic year (via yearMap) to avoid cross-year mismatches
     const classMap = new Map<string, string>();
     for (const mc of masterClasses) {
-      const tc = tenantClasses.find((t) => t.code === mc.code);
+      const mappedYearId = yearMap.get(mc.academicYearId);
+      if (!mappedYearId) continue;
+      const tc = tenantClasses.find(
+        (t) => t.code === mc.code && t.academicYearId === mappedYearId,
+      );
       if (tc) classMap.set(mc.id, tc.id);
     }
 
@@ -888,18 +896,33 @@ export class FinanceService {
    */
   async seedFeeStructures(
     context: RequestContext,
+    academicYearId?: string,
   ): Promise<{ created: number; skipped: number }> {
     const tenantId = context.tenantId;
 
-    // ── 1. Active Academic Year ──────────────────────────────────────────────
-    const activeYear = await this.prisma.academicYear.findFirst({
-      where: { tenantId, isActive: true, softDelete: false },
-      select: { id: true, name: true },
-    });
-    if (!activeYear) {
-      throw new BadRequestException(
-        '[ERR-FS-SEED-4001] No active Academic Year found. Please create and activate an Academic Year first.',
-      );
+    // ── 1. Resolve Academic Year: use the provided ID or fall back to active ─
+    let activeYear: { id: string; name: string } | null = null;
+
+    if (academicYearId) {
+      activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId, id: academicYearId, softDelete: false },
+        select: { id: true, name: true },
+      });
+      if (!activeYear) {
+        throw new BadRequestException(
+          `[ERR-FS-SEED-4001] Academic Year not found: ${academicYearId}.`,
+        );
+      }
+    } else {
+      activeYear = await this.prisma.academicYear.findFirst({
+        where: { tenantId, isActive: true, softDelete: false },
+        select: { id: true, name: true },
+      });
+      if (!activeYear) {
+        throw new BadRequestException(
+          '[ERR-FS-SEED-4001] No active Academic Year found. Please create and activate an Academic Year first.',
+        );
+      }
     }
 
     // ── 2. Fee Categories (only leaf items — items with parentId, or standalone parents with no children) ──

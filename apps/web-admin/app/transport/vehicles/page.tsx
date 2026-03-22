@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { AuthGuard } from '../../../components/AuthGuard';
-import { apiRequest } from '../../../lib/api';
+import { bffFetch } from '../../../lib/api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,11 +128,14 @@ export default function FleetManagementPage() {
   const loadVehicles = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiRequest<Vehicle[]>(BFF, { disableTenantValidation: true });
-      setVehicles(data);
-    } catch { flash('error', 'Failed to load vehicles'); }
+      const data = await bffFetch<Vehicle[]>(BFF);
+      setVehicles(Array.isArray(data) ? data : []);
+    } catch {
+      // Graceful empty state — no error toast on initial load
+      setVehicles([]);
+    }
     setLoading(false);
-  }, [flash]);
+  }, []);
 
   useEffect(() => { loadVehicles(); }, [loadVehicles]);
 
@@ -172,10 +175,10 @@ export default function FleetManagementPage() {
 
     try {
       if (editId) {
-        await apiRequest(`${BFF}/${editId}`, { method: 'PATCH', body: JSON.stringify(payload), disableTenantValidation: true });
+        await bffFetch(`${BFF}/${editId}`, { method: 'PATCH', body: JSON.stringify(payload) });
         flash('success', 'Vehicle updated');
       } else {
-        await apiRequest(BFF, { method: 'POST', body: JSON.stringify(payload), disableTenantValidation: true });
+        await bffFetch(BFF, { method: 'POST', body: JSON.stringify(payload) });
         flash('success', 'Vehicle created');
       }
       setModalOpen(false);
@@ -187,7 +190,7 @@ export default function FleetManagementPage() {
   const deleteVehicle = async (id: string) => {
     if (!confirm('Delete this vehicle?')) return;
     try {
-      await apiRequest(`${BFF}/${id}`, { method: 'DELETE', disableTenantValidation: true });
+      await bffFetch(`${BFF}/${id}`, { method: 'DELETE' });
       flash('success', 'Vehicle deleted');
       loadVehicles();
     } catch { flash('error', 'Failed to delete vehicle'); }

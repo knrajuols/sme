@@ -7,121 +7,52 @@ import { bffFetch } from '../../../lib/api';
 import type { UserClaims } from '../../../lib/auth';
 import { PremiumCard } from '../../../components/ui/PremiumCard';
 import { StatusPill } from '../../../components/ui/StatusPill';
+import { TeacherForm } from '../../../components/forms/TeacherForm';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface SubjectRef { id: string; name: string; code: string; }
+interface DeptRef { id: string; name: string; code: string; }
+interface RoleRef { id: string; name: string; code: string; }
+
 interface Teacher {
   id: string;
   firstName: string | null;
   lastName: string | null;
   email: string | null;
   contactPhone: string | null;
+  dateOfBirth: string | null;
+  dateOfJoining: string | null;
   employeeCode: string;
   designation: string;
   isActive: boolean;
   subjects: SubjectRef[];
 }
 
-interface TeacherForm {
-  firstName: string;
-  lastName: string;
-  email: string;
-  phone: string;
-  employeeCode: string;
-  designation: string;
-  isActive: boolean;
-  subjectIds: string[];
-}
-
-type FormErrors = Partial<Record<keyof TeacherForm, string>>;
-
-const EMPTY_FORM: TeacherForm = {
-  firstName: '',
-  lastName: '',
-  email: '',
-  phone: '',
-  employeeCode: '',
-  designation: '',
-  isActive: true,
-  subjectIds: [],
-};
-
-// ── Validation ────────────────────────────────────────────────────────────────
-function validateForm(form: TeacherForm): FormErrors {
-  const e: FormErrors = {};
-  if (!form.firstName.trim()) e.firstName = 'First name is required.';
-  else if (form.firstName.trim().length < 2) e.firstName = 'First name must be at least 2 characters.';
-  // lastName is optional — only validate length if provided
-  if (form.lastName.trim() && form.lastName.trim().length < 2) e.lastName = 'Last name must be at least 2 characters.';
-  if (!form.email.trim()) e.email = 'Email is required.';
-  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) e.email = 'Enter a valid email address.';
-  if (!form.employeeCode.trim()) e.employeeCode = 'Employee ID is required.';
-  else if (form.employeeCode.trim().length < 3) e.employeeCode = 'Employee ID must be at least 3 characters.';
-  if (!form.designation.trim()) e.designation = 'Designation is required.';
-  return e;
-}
-
 function fullName(t: Teacher): string {
   return [t.firstName, t.lastName].filter(Boolean).join(' ') || t.employeeCode;
 }
 
-// ── Slide-over panel ──────────────────────────────────────────────────────────
+// ── Slide-over panel (thin wrapper around reusable TeacherForm) ────────────────
 function TeacherPanel({
   open,
   editingTeacher,
   allSubjects,
+  allDepts,
+  allRoles,
   onClose,
-  onSave,
-  saving,
+  onSuccess,
+  onError,
 }: {
   open: boolean;
   editingTeacher: Teacher | null;
   allSubjects: SubjectRef[];
+  allDepts: DeptRef[];
+  allRoles: RoleRef[];
   onClose: () => void;
-  onSave: (form: TeacherForm) => void;
-  saving: boolean;
+  onSuccess: (info: { name: string; action: 'created' | 'updated' }) => void;
+  onError: (msg: string) => void;
 }) {
   const isEdit = editingTeacher !== null;
-  const [form, setForm] = useState<TeacherForm>(EMPTY_FORM);
-  const [errors, setErrors] = useState<FormErrors>({});
-
-  useEffect(() => {
-    if (open) {
-      setForm(
-        editingTeacher
-          ? {
-              firstName: editingTeacher.firstName ?? '',
-              lastName: editingTeacher.lastName ?? '',
-              email: editingTeacher.email ?? '',
-              phone: editingTeacher.contactPhone ?? '',
-              employeeCode: editingTeacher.employeeCode,
-              designation: editingTeacher.designation,
-              isActive: editingTeacher.isActive,
-              subjectIds: editingTeacher.subjects?.map(s => s.id) ?? [],
-            }
-          : EMPTY_FORM
-      );
-      setErrors({});
-    }
-  }, [open, editingTeacher]);
-
-  function setField(field: keyof TeacherForm) {
-    return (e: React.ChangeEvent<HTMLInputElement>) => {
-      setForm((prev) => ({ ...prev, [field]: e.target.value }));
-      if (errors[field]) setErrors((prev) => ({ ...prev, [field]: undefined }));
-    };
-  }
-
-  function handleSubmit(ev: React.FormEvent) {
-    ev.preventDefault();
-    const errs = validateForm(form);
-    if (Object.keys(errs).length > 0) { setErrors(errs); return; }
-    onSave(form);
-  }
-
-  const inputCls = (err?: string) =>
-    `w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors
-     ${err ? 'border-red-400 bg-red-50' : 'border-slate-300 bg-white hover:border-slate-400'}`;
 
   return (
     <>
@@ -159,187 +90,18 @@ function TeacherPanel({
           </button>
         </div>
 
-        {/* Body */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-5">
-          {/* Name row */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                First Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className={inputCls(errors.firstName)}
-                value={form.firstName}
-                onChange={setField('firstName')}
-                placeholder="e.g. Priya"
-                maxLength={100}
-                autoFocus
-              />
-              {errors.firstName && <p className="mt-1 text-xs text-red-600">{errors.firstName}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                Last Name <span className="text-slate-400 font-normal">(optional)</span>
-              </label>
-              <input
-                type="text"
-                className={inputCls(errors.lastName)}
-                value={form.lastName}
-                onChange={setField('lastName')}
-                placeholder="e.g. Sharma"
-                maxLength={100}
-              />
-              {errors.lastName && <p className="mt-1 text-xs text-red-600">{errors.lastName}</p>}
-            </div>
-          </div>
-
-          {/* Email */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-              Email <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="email"
-              className={inputCls(errors.email)}
-              value={form.email}
-              onChange={setField('email')}
-              placeholder="e.g. priya.sharma@school.edu"
-              maxLength={200}
-            />
-            {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email}</p>}
-          </div>
-
-          {/* Phone */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">Phone</label>
-            <input
-              type="text"
-              className={inputCls(errors.phone)}
-              value={form.phone}
-              onChange={setField('phone')}
-              placeholder="e.g. +91-9876543210"
-              maxLength={20}
-            />
-          </div>
-
-          {/* Employee ID + Designation */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                Employee ID <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className={`${inputCls(errors.employeeCode)} font-mono`}
-                value={form.employeeCode}
-                onChange={setField('employeeCode')}
-                placeholder="EMP-1001"
-                maxLength={50}
-              />
-              {errors.employeeCode && <p className="mt-1 text-xs text-red-600">{errors.employeeCode}</p>}
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-                Designation <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                className={inputCls(errors.designation)}
-                value={form.designation}
-                onChange={setField('designation')}
-                placeholder="e.g. Senior Teacher"
-                maxLength={100}
-              />
-              {errors.designation && <p className="mt-1 text-xs text-red-600">{errors.designation}</p>}
-            </div>
-          </div>
-
-          {/* Subjects multi-select */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
-              Subjects <span className="text-slate-400 font-normal">(optional)</span>
-            </label>
-            {allSubjects.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No subjects configured yet.</p>
-            ) : (
-              <div className="max-h-40 overflow-y-auto rounded-lg border border-slate-300 bg-white divide-y divide-slate-100">
-                {allSubjects.map(s => {
-                  const checked = form.subjectIds.includes(s.id);
-                  return (
-                    <label key={s.id}
-                      className="flex items-center gap-2.5 px-3 py-2 cursor-pointer hover:bg-slate-50 transition-colors">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => {
-                          setForm(prev => ({
-                            ...prev,
-                            subjectIds: checked
-                              ? prev.subjectIds.filter(id => id !== s.id)
-                              : [...prev.subjectIds, s.id],
-                          }));
-                        }}
-                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-slate-700">{s.name}</span>
-                      <span className="ml-auto font-mono text-[10px] text-slate-400">{s.code}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Active toggle */}
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={form.isActive}
-              onClick={() => setForm((prev) => ({ ...prev, isActive: !prev.isActive }))}
-              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500
-                ${form.isActive ? 'bg-blue-600' : 'bg-slate-300'}`}
-            >
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform
-                  ${form.isActive ? 'translate-x-6' : 'translate-x-1'}`}
-              />
-            </button>
-            <span className="text-sm text-slate-700">
-              {form.isActive ? 'Active' : 'Inactive'}
-            </span>
-          </div>
-
-          <div className="flex-1" />
-
-          {/* Actions */}
-          <div className="flex gap-3 pt-4 border-t border-slate-100">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={saving}
-              className="flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={saving}
-              className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-60 transition-colors flex items-center justify-center gap-2"
-            >
-              {saving ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                  </svg>
-                  Saving&hellip;
-                </>
-              ) : (isEdit ? 'Update Teacher' : 'Save Teacher')}
-            </button>
-          </div>
-        </form>
+        {/* Form body — delegated to reusable TeacherForm */}
+        <div className="flex-1 overflow-y-auto px-6 py-6">
+          <TeacherForm
+            editing={editingTeacher}
+            allSubjects={allSubjects}
+            allDepts={allDepts}
+            allRoles={allRoles}
+            onSuccess={onSuccess}
+            onError={onError}
+            onCancel={onClose}
+          />
+        </div>
       </div>
     </>
   );
@@ -388,29 +150,19 @@ function DeleteDialog({
 function FacultyContent({ claims: _claims }: { claims: UserClaims }) {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [allSubjects, setAllSubjects] = useState<SubjectRef[]>([]);
+  const [allDepts, setAllDepts] = useState<DeptRef[]>([]);
+  const [allRoles, setAllRoles] = useState<RoleRef[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingTeacher, setEditingTeacher] = useState<Teacher | null>(null);
-  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Teacher | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    Promise.all([
-      bffFetch<Teacher[]>('/api/faculty'),
-      bffFetch<SubjectRef[]>('/api/academic/subjects').catch(() => [] as SubjectRef[]),
-    ])
-      .then(([data, subs]) => {
-        setTeachers(Array.isArray(data) ? data : []);
-        setAllSubjects(Array.isArray(subs) ? subs : []);
-      })
-      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : 'Failed to load faculty'))
-      .finally(() => setLoading(false));
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadData(); }, []);
 
   function openAdd() {
     setEditingTeacher(null);
@@ -428,80 +180,35 @@ function FacultyContent({ claims: _claims }: { claims: UserClaims }) {
     setTimeout(() => setEditingTeacher(null), 300);
   }
 
-  async function handleSave(form: TeacherForm) {
-    setSaving(true);
+  function loadData() {
+    setLoading(true);
+    Promise.all([
+      bffFetch<Teacher[]>('/api/faculty'),
+      bffFetch<SubjectRef[]>('/api/academic/subjects').catch(() => [] as SubjectRef[]),
+      bffFetch<DeptRef[]>('/api/hr/departments').catch(() => [] as DeptRef[]),
+      bffFetch<RoleRef[]>('/api/hr/roles').catch(() => [] as RoleRef[]),
+    ])
+      .then(([data, subs, depts, roles]) => {
+        setTeachers(Array.isArray(data) ? data : []);
+        setAllSubjects(Array.isArray(subs) ? subs : []);
+        setAllDepts(Array.isArray(depts) ? depts : []);
+        setAllRoles(Array.isArray(roles) ? roles : []);
+      })
+      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : 'Failed to load faculty'))
+      .finally(() => setLoading(false));
+  }
+
+  function handleFormSuccess(info: { name: string; action: 'created' | 'updated' }) {
+    setPanelOpen(false);
     setSaveError('');
-    try {
-      if (editingTeacher) {
-        await bffFetch<unknown>(`/api/faculty/${editingTeacher.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            firstName: form.firstName.trim(),
-            lastName: form.lastName.trim() || undefined,
-            email: form.email.trim().toLowerCase(),
-            phone: form.phone.trim() || undefined,
-            employeeCode: form.employeeCode.trim(),
-            designation: form.designation.trim(),
-            isActive: form.isActive,
-            subjectIds: form.subjectIds,
-          }),
-        });
-        const updatedSubjects = allSubjects.filter(s => form.subjectIds.includes(s.id));
-        setTeachers((prev) =>
-          prev.map((t) =>
-            t.id === editingTeacher.id
-              ? {
-                  ...t,
-                  firstName: form.firstName.trim(),
-                  lastName: form.lastName.trim() || null,
-                  email: form.email.trim().toLowerCase(),
-                  contactPhone: form.phone.trim() || null,
-                  employeeCode: form.employeeCode.trim(),
-                  designation: form.designation.trim(),
-                  isActive: form.isActive,
-                  subjects: updatedSubjects,
-                }
-              : t
-          )
-        );
-        setSuccessMsg(`Teacher "${form.firstName.trim()}" updated successfully.`);
-      } else {
-        const result = await bffFetch<{ id: string }>('/api/faculty', {
-          method: 'POST',
-          body: JSON.stringify({
-            firstName: form.firstName.trim(),
-            lastName: form.lastName.trim() || undefined,
-            email: form.email.trim().toLowerCase(),
-            phone: form.phone.trim() || undefined,
-            employeeCode: form.employeeCode.trim(),
-            designation: form.designation.trim(),
-            isActive: form.isActive,
-            subjectIds: form.subjectIds,
-          }),
-        });
-        const newSubjects = allSubjects.filter(s => form.subjectIds.includes(s.id));
-        const newTeacher: Teacher = {
-          id: result.id,
-          firstName: form.firstName.trim(),
-          lastName: form.lastName.trim() || null,
-          email: form.email.trim().toLowerCase(),
-          contactPhone: form.phone.trim() || null,
-          employeeCode: form.employeeCode.trim(),
-          designation: form.designation.trim(),
-          isActive: form.isActive,
-          subjects: newSubjects,
-        };
-        setTeachers((prev) => [...prev, newTeacher]);
-        setSuccessMsg(`Teacher "${form.firstName.trim()}" added successfully.`);
-      }
-      setSaving(false);
-      setPanelOpen(false);
-      setTimeout(() => setEditingTeacher(null), 300);
-      setTimeout(() => setSuccessMsg(''), 4000);
-    } catch (e: unknown) {
-      setSaveError(e instanceof Error ? e.message : 'Failed to save teacher');
-      setSaving(false);
-    }
+    setTimeout(() => setEditingTeacher(null), 300);
+    setSuccessMsg(
+      info.action === 'created'
+        ? `Teacher "${info.name}" added successfully.`
+        : `Teacher "${info.name}" updated successfully.`
+    );
+    setTimeout(() => setSuccessMsg(''), 4000);
+    loadData();
   }
 
   async function handleDeleteConfirm() {
@@ -667,9 +374,11 @@ function FacultyContent({ claims: _claims }: { claims: UserClaims }) {
         open={panelOpen}
         editingTeacher={editingTeacher}
         allSubjects={allSubjects}
+        allDepts={allDepts}
+        allRoles={allRoles}
         onClose={handleClose}
-        onSave={handleSave}
-        saving={saving}
+        onSuccess={handleFormSuccess}
+        onError={(msg) => setSaveError(msg)}
       />
 
       <DeleteDialog

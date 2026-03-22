@@ -2,14 +2,22 @@
 
 import { FormEvent, useEffect, useState } from 'react';
 
-import { decodeTokenClaims, login } from '../../lib/auth';
+import { decodeTokenClaims, login, staffLogin } from '../../lib/auth';
 import { PremiumCard } from '../../components/ui/PremiumCard';
 import type { AccentColor } from '../../components/ui/PremiumCard';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Gate = 'staff' | 'family';
 
-interface GateState {
+interface StaffGateState {
+  phone: string;
+  password: string;
+  showPassword: boolean;
+  loading: boolean;
+  error: string;
+}
+
+interface FamilyGateState {
   email: string;
   password: string;
   showPassword: boolean;
@@ -79,33 +87,17 @@ async function fetchTenantBranding(code: string): Promise<TenantBranding | null>
   }
 }
 
-// ── Login Gate Form ───────────────────────────────────────────────────────────
-function LoginGate({
-  gate,
-  accentColor,
-  buttonColor,
-  title,
-  subtitle,
-  submitLabel,
-  defaultEmail,
-}: {
-  gate: Gate;
-  accentColor: AccentColor;
-  buttonColor: string;
-  title: string;
-  subtitle: string;
-  submitLabel: string;
-  defaultEmail: string;
-}) {
-  const [state, setState] = useState<GateState>({
-    email: defaultEmail,
-    password: 'password',
+// ── Staff Login Gate (Phone + Password) ───────────────────────────────────────
+function StaffLoginGate() {
+  const [state, setState] = useState<StaffGateState>({
+    phone: '',
+    password: '',
     showPassword: false,
     loading: false,
     error: '',
   });
 
-  function set<K extends keyof GateState>(key: K, value: GateState[K]) {
+  function set<K extends keyof StaffGateState>(key: K, value: StaffGateState[K]) {
     setState((prev) => ({ ...prev, [key]: value }));
   }
 
@@ -114,13 +106,13 @@ function LoginGate({
     set('error', '');
     set('loading', true);
     try {
-      const token = await login(state.email, state.password);
-      const claims = decodeTokenClaims(token);
-      const isAdmin = claims?.roles?.includes('SCHOOL_ADMIN') ?? false;
-      if (gate === 'staff') {
-        window.location.href = isAdmin ? '/admin/dashboard' : '/portal/dashboard';
+      const result = await staffLogin(state.phone, state.password);
+      if (result.requiresPasswordChange) {
+        window.location.href = '/staff/setup-password';
       } else {
-        window.location.href = '/portal/dashboard';
+        const claims = decodeTokenClaims(result.accessToken);
+        const isAdmin = claims?.roles?.includes('SCHOOL_ADMIN') ?? false;
+        window.location.href = isAdmin ? '/admin/dashboard' : '/staff/dashboard';
       }
     } catch (err) {
       set('error', err instanceof Error ? err.message : 'Login failed. Please try again.');
@@ -133,17 +125,131 @@ function LoginGate({
     'w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors placeholder:text-slate-400';
 
   return (
-    <PremiumCard accentColor={accentColor}>
-      <h2 className="text-xl font-bold text-slate-900 mb-1">{title}</h2>
-      <p className="text-sm text-slate-500 mb-6">{subtitle}</p>
+    <PremiumCard accentColor="blue">
+      <h2 className="text-xl font-bold text-slate-900 mb-1">Staff Portal</h2>
+      <p className="text-sm text-slate-500 mb-6">Access attendance, grading, and admin tools.</p>
 
       <form onSubmit={onSubmit} autoComplete="off" className="space-y-4">
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide" htmlFor={`${gate}-email`}>
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide" htmlFor="staff-phone">
+            Registered Phone Number
+          </label>
+          <input
+            id="staff-phone"
+            type="tel"
+            className={inputClass}
+            value={state.phone}
+            onChange={(e) => set('phone', e.target.value)}
+            required
+            autoComplete="tel"
+            placeholder="+91-9876543210"
+            inputMode="tel"
+          />
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide" htmlFor="staff-password">
+            Password
+          </label>
+          <p className="text-xs text-slate-400 mb-2">First time? Use your Date of Birth (DDMMYYYY)</p>
+          <div className="relative">
+            <input
+              id="staff-password"
+              type={state.showPassword ? 'text' : 'password'}
+              className={`${inputClass} pr-11`}
+              value={state.password}
+              onChange={(e) => set('password', e.target.value)}
+              required
+              autoComplete="current-password"
+              placeholder="e.g. 05101990"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+              onClick={() => set('showPassword', !state.showPassword)}
+              tabIndex={-1}
+              aria-label={state.showPassword ? 'Hide password' : 'Show password'}
+            >
+              {state.showPassword ? (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-5 0-9-4.03-9-9 0-1.657.42-3.217 1.175-4.575M15 12a3 3 0 11-6 0 3 3 0 016 0zm6.825 4.575A9.96 9.96 0 0021 10c0-5-4.03-9-9-9a9.96 9.96 0 00-4.575 1.175" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0zM2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {state.error && (
+          <p className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+            {state.error}
+          </p>
+        )}
+
+        <button
+          type="submit"
+          disabled={state.loading}
+          className="w-full bg-blue-600 hover:bg-blue-700 shadow-blue-200 text-white font-bold py-3 rounded-xl shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed text-sm mt-2"
+        >
+          {state.loading ? 'Signing in…' : 'Sign In to Workspace'}
+        </button>
+      </form>
+    </PremiumCard>
+  );
+}
+
+// ── Family Login Gate (Email + Password — legacy IAM flow) ────────────────────
+function FamilyLoginGate({
+  defaultEmail,
+}: {
+  defaultEmail: string;
+}) {
+  const [state, setState] = useState<FamilyGateState>({
+    email: defaultEmail,
+    password: 'password',
+    showPassword: false,
+    loading: false,
+    error: '',
+  });
+
+  function set<K extends keyof FamilyGateState>(key: K, value: FamilyGateState[K]) {
+    setState((prev) => ({ ...prev, [key]: value }));
+  }
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    set('error', '');
+    set('loading', true);
+    try {
+      const token = await login(state.email, state.password);
+      const claims = decodeTokenClaims(token);
+      void claims;
+      window.location.href = '/portal/dashboard';
+    } catch (err) {
+      set('error', err instanceof Error ? err.message : 'Login failed. Please try again.');
+    } finally {
+      set('loading', false);
+    }
+  }
+
+  const inputClass =
+    'w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-3 text-slate-800 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none transition-colors placeholder:text-slate-400';
+
+  return (
+    <PremiumCard accentColor="green">
+      <h2 className="text-xl font-bold text-slate-900 mb-1">Family Portal</h2>
+      <p className="text-sm text-slate-500 mb-6">View report cards, schedules, and fee updates.</p>
+
+      <form onSubmit={onSubmit} autoComplete="off" className="space-y-4">
+        <div>
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide" htmlFor="family-email">
             Email Address
           </label>
           <input
-            id={`${gate}-email`}
+            id="family-email"
             type="email"
             className={inputClass}
             value={state.email}
@@ -156,12 +262,12 @@ function LoginGate({
         </div>
 
         <div>
-          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide" htmlFor={`${gate}-password`}>
+          <label className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wide" htmlFor="family-password">
             Password
           </label>
           <div className="relative">
             <input
-              id={`${gate}-password`}
+              id="family-password"
               type={state.showPassword ? 'text' : 'password'}
               className={`${inputClass} pr-11`}
               value={state.password}
@@ -200,9 +306,9 @@ function LoginGate({
         <button
           type="submit"
           disabled={state.loading}
-          className={`w-full ${buttonColor} text-white font-bold py-3 rounded-xl shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed text-sm mt-2`}
+          className="w-full bg-green-600 hover:bg-green-700 shadow-green-200 text-white font-bold py-3 rounded-xl shadow-md transition-all hover:-translate-y-0.5 hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed text-sm mt-2"
         >
-          {state.loading ? 'Signing in…' : submitLabel}
+          {state.loading ? 'Signing in…' : 'Access Family Dashboard'}
         </button>
       </form>
     </PremiumCard>
@@ -267,24 +373,8 @@ export default function LoginPage() {
       {/* Dual Login Gates */}
       <section className="px-6 pb-10 max-w-4xl mx-auto w-full">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <LoginGate
-            gate="staff"
-            accentColor="blue"
-            buttonColor="bg-blue-600 hover:bg-blue-700 shadow-blue-200"
-            title="Staff Portal"
-            subtitle="Access attendance, grading, and admin tools."
-            submitLabel="Sign In to Workspace"
-            defaultEmail="admin@sme.test"
-          />
-          <LoginGate
-            gate="family"
-            accentColor="green"
-            buttonColor="bg-green-600 hover:bg-green-700 shadow-green-200"
-            title="Family Portal"
-            subtitle="View report cards, schedules, and fee updates."
-            submitLabel="Access Family Dashboard"
-            defaultEmail="parent@sme.test"
-          />
+          <StaffLoginGate />
+          <FamilyLoginGate defaultEmail="parent@sme.test" />
         </div>
       </section>
 

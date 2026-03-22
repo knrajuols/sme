@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsArray, IsBoolean, IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 
 export class CreateTeacherDto {
   @ApiProperty({ example: 'Priya' })
@@ -15,10 +15,11 @@ export class CreateTeacherDto {
   @MaxLength(100)
   lastName?: string;
 
-  @ApiProperty({ example: 'priya.sharma@school.edu' })
-  @IsEmail()
+  @ApiPropertyOptional({ example: 'priya.sharma@school.edu' })
+  @IsOptional()
+  @IsString()
   @MaxLength(200)
-  email!: string;
+  email?: string;
 
   @ApiPropertyOptional({ example: '+91-9876543210' })
   @IsOptional()
@@ -37,6 +38,24 @@ export class CreateTeacherDto {
   @MinLength(2)
   @MaxLength(100)
   designation!: string;
+
+  @ApiProperty({ description: 'Department ID for the unified Employee record' })
+  @IsString()
+  departmentId!: string;
+
+  @ApiProperty({ description: 'Employee Role ID for the unified Employee record' })
+  @IsString()
+  roleId!: string;
+
+  @ApiPropertyOptional({ example: '1990-05-15', description: 'Date of birth (ISO 8601)' })
+  @IsOptional()
+  @IsDateString()
+  dateOfBirth?: string;
+
+  @ApiPropertyOptional({ example: '2024-06-01', description: 'Date of joining (ISO 8601)' })
+  @IsOptional()
+  @IsDateString()
+  dateOfJoining?: string;
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()

@@ -1,0 +1,39 @@
+
+====================
+
+Note from User:
+
+No Data Loss Implementation.
+
+Use your intelligence also, technology-wise, domain-wise.
+Also consider the code available.
+---------------------
+
+Analyze for Design, Implementation, and Testing across End-to-End Stack:
+•	UI Pages
+•	UI Elements
+•	UI Must be Responsive
+(UI Tables MUST support, filter boxes for key columns, Columns must support Sorting, table must support Pagination (x of y), Sticky Header, Sticky, Footer)
+•	BFF
+•	DTO
+•	APIs
+•	Gateways
+•	Schema
+•	Database
+•	Services
+-----------
+Compile, fix errors, Build, Test end-to-end (UI to Database)
+
+If you want you can stop or start services… Visual Studio Code is Started with Admin Permissions.
+
+Design and Coding Standards Mandate at Enterprise Grade Level:
+Reliability, Scalability, Security, UI.
+-------------
+
+
+
+
+
+
+
+

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AuthGuard } from '../../../components/AuthGuard';
-import { apiRequest } from '../../../lib/api';
+import { bffFetch } from '../../../lib/api';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -88,20 +88,26 @@ export default function TransportStaffPage() {
   const loadDrivers = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiRequest<Driver[]>(BFF_DRIVERS, { disableTenantValidation: true });
-      setDrivers(data);
-    } catch { flash('error', 'Failed to load drivers'); }
+      const data = await bffFetch<Driver[]>(BFF_DRIVERS);
+      setDrivers(Array.isArray(data) ? data : []);
+    } catch {
+      // Graceful empty state — no error toast on initial load
+      setDrivers([]);
+    }
     setLoading(false);
-  }, [flash]);
+  }, []);
 
   const loadAttendants = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await apiRequest<Attendant[]>(BFF_ATTENDANTS, { disableTenantValidation: true });
-      setAttendants(data);
-    } catch { flash('error', 'Failed to load attendants'); }
+      const data = await bffFetch<Attendant[]>(BFF_ATTENDANTS);
+      setAttendants(Array.isArray(data) ? data : []);
+    } catch {
+      // Graceful empty state — no error toast on initial load
+      setAttendants([]);
+    }
     setLoading(false);
-  }, [flash]);
+  }, []);
 
   useEffect(() => { loadDrivers(); loadAttendants(); }, [loadDrivers, loadAttendants]);
 
@@ -155,13 +161,13 @@ export default function TransportStaffPage() {
 
     try {
       if (editId) {
-        await apiRequest(`${BFF_DRIVERS}/${editId}`, {
-          method: 'PATCH', body: JSON.stringify(payload), disableTenantValidation: true,
+        await bffFetch(`${BFF_DRIVERS}/${editId}`, {
+          method: 'PATCH', body: JSON.stringify(payload),
         });
         flash('success', 'Driver updated');
       } else {
-        await apiRequest(BFF_DRIVERS, {
-          method: 'POST', body: JSON.stringify(payload), disableTenantValidation: true,
+        await bffFetch(BFF_DRIVERS, {
+          method: 'POST', body: JSON.stringify(payload),
         });
         flash('success', 'Driver created');
       }
@@ -185,13 +191,13 @@ export default function TransportStaffPage() {
 
     try {
       if (editId) {
-        await apiRequest(`${BFF_ATTENDANTS}/${editId}`, {
-          method: 'PATCH', body: JSON.stringify(payload), disableTenantValidation: true,
+        await bffFetch(`${BFF_ATTENDANTS}/${editId}`, {
+          method: 'PATCH', body: JSON.stringify(payload),
         });
         flash('success', 'Attendant updated');
       } else {
-        await apiRequest(BFF_ATTENDANTS, {
-          method: 'POST', body: JSON.stringify(payload), disableTenantValidation: true,
+        await bffFetch(BFF_ATTENDANTS, {
+          method: 'POST', body: JSON.stringify(payload),
         });
         flash('success', 'Attendant created');
       }
@@ -206,7 +212,7 @@ export default function TransportStaffPage() {
   const deleteDriver = async (id: string) => {
     if (!confirm('Delete this driver?')) return;
     try {
-      await apiRequest(`${BFF_DRIVERS}/${id}`, { method: 'DELETE', disableTenantValidation: true });
+      await bffFetch(`${BFF_DRIVERS}/${id}`, { method: 'DELETE' });
       flash('success', 'Driver deleted');
       loadDrivers();
     } catch { flash('error', 'Failed to delete driver'); }
@@ -215,7 +221,7 @@ export default function TransportStaffPage() {
   const deleteAttendant = async (id: string) => {
     if (!confirm('Delete this attendant?')) return;
     try {
-      await apiRequest(`${BFF_ATTENDANTS}/${id}`, { method: 'DELETE', disableTenantValidation: true });
+      await bffFetch(`${BFF_ATTENDANTS}/${id}`, { method: 'DELETE' });
       flash('success', 'Attendant deleted');
       loadAttendants();
     } catch { flash('error', 'Failed to delete attendant'); }
